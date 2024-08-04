@@ -154,11 +154,11 @@ class SplashScreen(Screen):
         
         play_sound("waiting_conn.mp3")
         # Schedule a check to see if the condition is met every second
-        # Clock.schedule_interval(self.check_condition, 1)
-        # self.animate_progress_bar()
+        Clock.schedule_interval(self.check_condition, 1)
+        self.animate_progress_bar()
 
         
-        Clock.schedule_once(self.switch_to_main, 5)
+        # Clock.schedule_once(self.switch_to_main, 5)
 
 
     def animate_progress_bar(self):
