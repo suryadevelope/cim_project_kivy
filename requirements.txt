@@ -1,0 +1,16 @@
+altgraph==0.17.4
+certifi==2024.6.2
+charset-normalizer==3.3.2
+docutils==0.21.2
+idna==3.7
+Kivy==2.3.0
+Kivy-Garden==0.1.5
+kivymd==1.2.0
+packaging==24.0
+pillow==10.3.0
+pygame==2.5.2
+Pygments==2.18.0
+pyinstaller==6.8.0
+pyinstaller-hooks-contrib==2024.7
+requests==2.32.3
+urllib3==2.2.1

@@ -1,0 +1,1 @@
+cd ~ && cd Desktop/cim_project && source ./.venv/bin/activate && python main.py

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Rover
+Comment=To control rover
+Exec=/bin/bash -c "/home/cim/Desktop/cim_project/start.sh > /home/cim/Desktop/cim_project/myapp.log 2>&1"
+Icon=/home/cim/Desktop/cim_project/assets/splash_image.png
+Terminal=true
+Type=Application
+Categories=Utility;Application;
