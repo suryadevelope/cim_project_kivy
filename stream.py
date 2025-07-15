@@ -247,12 +247,14 @@ class Stream(EventDispatcher):
                     # print(compassdata)
                     if(compassdata.startswith("#")):
                         print("PRABHU",compassdata[1:])
-                        parts = compassdata[1:].split(",")
-                        if(len(parts)==4):
+                        parts = compassdata[1:].split("=")
+                        if(len(parts)==5):
                             self.update_utils={
                                 "armstate":parts[0],
                                 "batvoltage":parts[1],
-                                "jetsonvoltage":parts[2]
+                                "jetsonvoltage":parts[2],
+                                "gps":parts[4],
+                                "compass":parts[3]
                             }
                             
 

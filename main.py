@@ -393,6 +393,7 @@ class MainScreen(Screen):
             self.img_src_armstate = "./assets/no_home.png"
         else:
             self.img_src_armstate = "./assets/at_home.png"
+            
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
     def update_ui_on_main_thread(self):
