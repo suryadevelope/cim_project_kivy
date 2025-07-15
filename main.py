@@ -473,6 +473,9 @@ class MainScreen(Screen):
             from kivy_garden.mapview import MapView
             if lat is not None and lng is not None and isinstance(self.mapview, MapView):
                 try:
+                    # Remove old marker if it exists and is not the same object
+                    if self.gps_marker is not None and self.gps_marker not in self.mapview._markers:
+                        self.gps_marker = None
                     if self.gps_marker is None:
                         print("[DEBUG] Creating new GPS marker...")
                         self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
@@ -595,7 +598,13 @@ class MainScreen(Screen):
         if image_widget.collide_point(*touch.pos):
             self.on_image_click(image_widget)
 
-    def on_leave(self):
+    def on_leave(self, *args):
+        # Remove marker from map to prevent duplicates
+        if self.gps_marker is not None and hasattr(self.mapview, 'remove_marker'):
+            try:
+                self.mapview.remove_marker(self.gps_marker)
+            except Exception:
+                pass
         for image_widget in self.image_widgets:
             image_widget.unbind(on_touch_down=self.on_image_touch)
 
@@ -680,7 +689,18 @@ class MapPlotScreen(Screen):
         self.add_widget(layout)
 
     def update_gps_marker(self, lat, lng, heading):
-        if self.gps_marker:
+        if self.gps_marker is not None and self.gps_marker not in self.mapview._markers:
+            self.gps_marker = None
+        if self.gps_marker is None:
+            try:
+                self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
+                self.gps_marker.size = (30, 30)
+                if heading is not None:
+                    self.gps_marker.heading = float(heading)
+                self.mapview.add_marker(self.gps_marker)
+            except Exception as e:
+                print(f"Error creating MapPlotScreen GPS marker: {e}")
+        else:
             try:
                 self.gps_marker.lat = float(lat)
                 self.gps_marker.lon = float(lng)
@@ -691,6 +711,14 @@ class MapPlotScreen(Screen):
 
     def go_back(self, instance):
         self.manager.current = 'main'
+
+    def on_leave(self, *args):
+        # Remove marker from map to prevent duplicates
+        if self.gps_marker is not None and hasattr(self.mapview, 'remove_marker'):
+            try:
+                self.mapview.remove_marker(self.gps_marker)
+            except Exception:
+                pass
 
 
 class RoverApp(MDApp):
