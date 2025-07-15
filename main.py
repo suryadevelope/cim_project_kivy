@@ -269,7 +269,7 @@ class RotatingMapMarker(MapMarker):
     heading = NumericProperty(0)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.logo_img = Image(source='./assets/rover_icon.png', size_hint=(None, None), size=(20, 20))
+        self.logo_img = Image(source='./assets/rover_icon.png', size_hint=(None, None), size=(30, 30))
         self.add_widget(self.logo_img)
         self.logo_img.center = self.center
     def on_pos(self, *args):
@@ -476,7 +476,7 @@ class MainScreen(Screen):
                     if self.gps_marker is None:
                         print("[DEBUG] Creating new GPS marker...")
                         self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
-                        self.gps_marker.size = (20, 20)
+                        self.gps_marker.size = (30, 30)
                         if heading is not None:
                             self.gps_marker.heading = float(heading)
                         self.mapview.add_marker(self.gps_marker)
@@ -486,7 +486,7 @@ class MainScreen(Screen):
                         print("[DEBUG] Updating existing GPS marker...")
                         self.gps_marker.lat = float(lat)
                         self.gps_marker.lon = float(lng)
-                        self.gps_marker.size = (20, 20)
+                        self.gps_marker.size = (30, 30)
                         if heading is not None:
                             self.gps_marker.heading = float(heading)
                         print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
