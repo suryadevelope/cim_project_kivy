@@ -259,11 +259,44 @@ class NavigationScreen(Screen):
     def go_back(self, instance):
         self.manager.current = 'main'
 
+# Custom MapMarker with rotation support for heading
+from kivy.properties import NumericProperty
+from kivy.graphics.context_instructions import PushMatrix, PopMatrix, Rotate
+
+class RotatingMapMarker(MapMarker):
+    heading = NumericProperty(0)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.logo_img = Image(source='./assets/logo.png', size_hint=(None, None), size=(48, 48))
+        self.add_widget(self.logo_img)
+        self.logo_img.center = self.center
+    def on_pos(self, *args):
+        self.logo_img.center = self.center
+    def on_heading(self, *args):
+        # Only use canvas.before/after if canvas exists
+        if hasattr(self.logo_img, 'canvas') and self.logo_img.canvas is not None:
+            self.logo_img.canvas.before.clear()
+            with self.logo_img.canvas.before:
+                PushMatrix()
+                Rotate(angle=self.heading, origin=self.logo_img.center)
+            self.logo_img.canvas.after.clear()
+            with self.logo_img.canvas.after:
+                PopMatrix()
+
+
 class MainScreen(Screen):
     img_src = StringProperty("./assets/bad_batt.png")
     jetsonimg_src = StringProperty("./assets/bad_batt.png")
     img_src_armstate = StringProperty("./assets/no_home.png")
     battimg = None
+    # Add properties for GPS info
+    satcount = StringProperty("0")
+    irnss_accuracy = StringProperty("N/A")
+    fix_type = StringProperty("N/A")
+    gps_fix = False
+    gps_status_label = None
+    mapplot_btn_top = None
+    gps_marker = None
     def __init__(self, **kwargs):
         super(MainScreen, self).__init__(**kwargs)
         with self.canvas.before:
@@ -295,10 +328,21 @@ class MainScreen(Screen):
         self.top_switch = Switch(active=False, size_hint_x=None, width=60)
         self.top_switch.bind(active=self.on_switch_active)
         top_nav.add_widget(self.top_switch)
-        mapplot_btn_top = Button(text="Map Plotting", size_hint_x=None, width=140, height=40, background_color=(0.1, 0.5, 0.2, 1), font_size='16sp')
-        mapplot_btn_top.bind(on_release=self.goto_mapplot)
-        top_nav.add_widget(mapplot_btn_top)
+        # Add GPS info labels
+        self.satcount_label = Label(text="Satcount: 0", size_hint_x=None, width=120, color=(1,1,1,1))
+        self.irnss_accuracy_label = Label(text="IRNSS Acc: N/A", size_hint_x=None, width=140, color=(1,1,1,1))
+        self.fix_type_label = Label(text="Fix: N/A", size_hint_x=None, width=100, color=(1,1,1,1))
+        top_nav.add_widget(self.satcount_label)
+        top_nav.add_widget(self.irnss_accuracy_label)
+        top_nav.add_widget(self.fix_type_label)
+        # Map Plotting button
+        self.mapplot_btn_top = Button(text="Map Plotting", size_hint_x=None, width=140, height=40, background_color=(0.1, 0.5, 0.2, 1), font_size='16sp')
+        self.mapplot_btn_top.bind(on_release=self.goto_mapplot)
+        top_nav.add_widget(self.mapplot_btn_top)
         top_nav.add_widget(Label(size_hint_x=1))
+        # GPS status label (for fix wait message)
+        self.gps_status_label = Label(text="", size_hint_x=None, width=200, color=(1,0,0,1))
+        top_nav.add_widget(self.gps_status_label)
 
         root_layout = BoxLayout(orientation='vertical', size_hint=(1, 1), padding=[10, 10, 10, 10], spacing=10)
         root_layout.add_widget(top_nav)
@@ -310,6 +354,9 @@ class MainScreen(Screen):
         try:
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             self.mapview.size_hint = (1, 1)
+            # Add GPS marker
+            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/logo.png')
+            self.mapview.add_marker(self.gps_marker)
         except Exception:
             if WebView:
                 self.mapview = WebView(url="https://www.google.com/maps")
@@ -381,25 +428,60 @@ class MainScreen(Screen):
                 self.dismiss_full_screen(self.popup)
 
     def update_utilsdata_ui(self, instance, value):
-        if int(float(value["batvoltage"])) <= 25:
+        # Battery and arm state logic
+        if int(float(value.get("batvoltage", 0))) <= 25:
             self.img_src = './assets/bad_batt.png'
         else:
             self.img_src = './assets/good_batt.png'
-        if int(float(value["jetsonvoltage"])) <= 11.5:
+        if int(float(value.get("jetsonvoltage", 0))) <= 11.5:
             self.jetsonimg_src = './assets/bad_batt.png'
         else:
             self.jetsonimg_src = './assets/good_batt.png'
-        if int(value["armstate"]) == 1:
+        if int(value.get("armstate", 0)) == 1:
             self.img_src_armstate = "./assets/no_home.png"
         else:
             self.img_src_armstate = "./assets/at_home.png"
-            
+        # GPS info
+        self.satcount = str(value.get("satcount", "0"))
+        self.irnss_accuracy = str(value.get("irnss_accuracy", "N/A"))
+        self.fix_type = str(value.get("fix_type", "N/A"))
+        self.gps_fix = bool(value.get("fix", False))
+        # GPS marker update
+        lat = value.get("lat")
+        lng = value.get("lng")
+        heading = value.get("heading")
+        if lat is not None and lng is not None and self.gps_marker:
+            try:
+                self.gps_marker.lat = float(lat)
+                self.gps_marker.lon = float(lng)
+                if heading is not None:
+                    self.gps_marker.heading = float(heading)
+            except Exception as e:
+                print(f"Error updating GPS marker: {e}")
+        # Also update MapPlotScreen marker if it exists and is active
+        app = App.get_running_app()
+        if hasattr(app, 'root') and app.root is not None:
+            mapplot_screen = app.root.get_screen('mapplot') if 'mapplot' in app.root.screen_names else None
+            if mapplot_screen and hasattr(mapplot_screen, 'gps_marker') and app.root.current == 'mapplot':
+                mapplot_screen.update_gps_marker(lat, lng, heading)
+        # Update UI on main thread
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
     def update_ui_on_main_thread(self):
         self.battimg.source = self.img_src
         self.armstateimg.source = self.img_src_armstate
         self.jetsonbattimg.source = self.jetsonimg_src
+        # Update GPS info labels
+        self.satcount_label.text = f"Satcount: {self.satcount}"
+        self.irnss_accuracy_label.text = f"IRNSS Acc: {self.irnss_accuracy}"
+        self.fix_type_label.text = f"Fix: {self.fix_type}"
+        # Enable/disable Map Plotting button and show GPS status
+        if self.gps_fix:
+            self.mapplot_btn_top.disabled = False
+            self.gps_status_label.text = ""
+        else:
+            self.mapplot_btn_top.disabled = True
+            self.gps_status_label.text = "Waiting for GPS 3D fix..."
 
     def update_joystickview(self, instance, value):
         if self.autoshowfullscreen:
@@ -493,6 +575,7 @@ class MainScreen(Screen):
 
 # --- Map Plotting Screen ---
 class MapPlotScreen(Screen):
+    gps_marker = None
     def __init__(self, **kwargs):
         super(MapPlotScreen, self).__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -500,6 +583,9 @@ class MapPlotScreen(Screen):
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             layout.add_widget(self.mapview)
             # Add controls for plotting (future: add waypoints, clear, etc.)
+            # Add GPS marker
+            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/logo.png')
+            self.mapview.add_marker(self.gps_marker)
         except Exception:
             if WebView:
                 self.webview = WebView(url="https://www.google.com/maps")
@@ -510,6 +596,16 @@ class MapPlotScreen(Screen):
         back_btn.bind(on_release=self.go_back)
         layout.add_widget(back_btn)
         self.add_widget(layout)
+
+    def update_gps_marker(self, lat, lng, heading):
+        if self.gps_marker:
+            try:
+                self.gps_marker.lat = float(lat)
+                self.gps_marker.lon = float(lng)
+                if heading is not None:
+                    self.gps_marker.heading = float(heading)
+            except Exception as e:
+                print(f"Error updating MapPlotScreen GPS marker: {e}")
 
     def go_back(self, instance):
         self.manager.current = 'main'
