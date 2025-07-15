@@ -466,38 +466,37 @@ class MainScreen(Screen):
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
         heading = value.get("compass")
-        # Debug prints to diagnose marker issue
         print(f"[DEBUG] mapview type: {type(self.mapview)}")
         print(f"[DEBUG] lat: {lat}, lng: {lng}")
-        from kivy_garden.mapview import MapView
-        if lat is not None and lng is not None and isinstance(self.mapview, MapView):
-            try:
-                if self.gps_marker is None:
-                    print("[DEBUG] Creating new GPS marker...")
-                    self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
-                    self.gps_marker.size = (20, 20)
-                    if heading is not None:
-                        self.gps_marker.heading = float(heading)
-                    self.mapview.add_marker(self.gps_marker)
-                    print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
-                    # Force center map on marker
-                    self.mapview.center_on(float(lat), float(lng))
-                else:
-                    print("[DEBUG] Updating existing GPS marker...")
-                    self.gps_marker.lat = float(lat)
-                    self.gps_marker.lon = float(lng)
-                    self.gps_marker.size = (20, 20)
-                    if heading is not None:
-                        self.gps_marker.heading = float(heading)
-                    print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
-                # Save last GPS for recentering
-                self._last_gps_lat = float(lat)
-                self._last_gps_lon = float(lng)
-                # If not user interacting, animate center on marker
-                if not self._user_interacting:
-                    self._animate_center_on(float(lat), float(lng))
-            except Exception as e:
-                print(f"Error updating GPS marker: {e}")
+        from kivy.clock import Clock
+        def _update_marker_on_main_thread(dt):
+            from kivy_garden.mapview import MapView
+            if lat is not None and lng is not None and isinstance(self.mapview, MapView):
+                try:
+                    if self.gps_marker is None:
+                        print("[DEBUG] Creating new GPS marker...")
+                        self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
+                        self.gps_marker.size = (20, 20)
+                        if heading is not None:
+                            self.gps_marker.heading = float(heading)
+                        self.mapview.add_marker(self.gps_marker)
+                        print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
+                        self.mapview.center_on(float(lat), float(lng))
+                    else:
+                        print("[DEBUG] Updating existing GPS marker...")
+                        self.gps_marker.lat = float(lat)
+                        self.gps_marker.lon = float(lng)
+                        self.gps_marker.size = (20, 20)
+                        if heading is not None:
+                            self.gps_marker.heading = float(heading)
+                        print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
+                    self._last_gps_lat = float(lat)
+                    self._last_gps_lon = float(lng)
+                    if not self._user_interacting:
+                        self._animate_center_on(float(lat), float(lng))
+                except Exception as e:
+                    print(f"Error updating GPS marker: {e}")
+        Clock.schedule_once(_update_marker_on_main_thread)
         # Also update MapPlotScreen marker if it exists and is active
         app = App.get_running_app()
         if hasattr(app, 'root') and app.root is not None:
