@@ -466,7 +466,9 @@ class MainScreen(Screen):
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
         heading = value.get("compass")
-        if lat is not None and lng is not None:
+        # Only update marker if mapview is a MapView instance
+        from kivy_garden.mapview import MapView
+        if lat is not None and lng is not None and isinstance(self.mapview, MapView):
             try:
                 if self.gps_marker is None:
                     # Create marker if it doesn't exist
@@ -479,6 +481,7 @@ class MainScreen(Screen):
                     # Update marker position and heading
                     self.gps_marker.lat = float(lat)
                     self.gps_marker.lon = float(lng)
+                    self.gps_marker.size = (20, 20)
                     if heading is not None:
                         self.gps_marker.heading = float(heading)
                 # Save last GPS for recentering
