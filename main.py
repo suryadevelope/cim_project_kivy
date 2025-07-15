@@ -6,6 +6,12 @@ import cv2
 from kivy.app import App
 from kivymd.app import MDApp
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.widget import Widget
+from kivy_garden.mapview import MapView, MapMarker, MapSource
+try:
+    from kivy_garden.webview import WebView
+except ImportError:
+    WebView = None
 from kivy.uix.image import Image
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button, Label
@@ -63,59 +69,44 @@ def maximize_window():
 Builder.load_string('''
 <CompassWidget>:
     size_hint: None, None
+    size: 200, 200  # Default size, will be updated by parent layout
     canvas.before:
         Rectangle:
-            # pos: self.pos
-            size: min(root.width, root.height) * 1.45, min(root.width, root.height) * 1.10
+            pos: self.pos
+            size: self.size
             source: './assets/compass_bg.png'
- 
 
-    needle: needle
     Image:
         id: needle
         source: './assets/needle.png'
-        size_hint: None, None
-        size: min(root.width, root.height)*2.5, min(root.width, root.height)*1.5 # Set the size of the needle to 80% of the minimum dimension of the CompassWidget
-        center: self.parent.center # Position the needle at the center of the CompassWidget
+        # size_hint: None, None
+        size: root.width * 0.3, root.height * 0.3
+        pos:  self.width / 2, self.height / 2
         keep_ratio: True
         allow_stretch: True
-        angle: 0
         canvas.before:
             PushMatrix
             Rotate:
-                angle: self.angle
+                angle: root.needle_angle if hasattr(root, 'needle_angle') else 0
                 origin: self.center
-                # origin: root.calculate_rotation_origin(self.angle, self.center_x, self.center_y, self.parent.width, self.parent.height) 
-                # origin: self.calculate_rotation_origin(self.angle, self.width, self.height)  # Dynamically set origin based on angle
         canvas.after:
             PopMatrix
-    
 ''')
 
 
-class CompassWidget(BoxLayout):
-    def calculate_rotation_origin(self, angle, center_x, center_y, width, height):
-            # Calculate the rotation origin based on the angle, center, and dimensions
-            import math
-            half_width = width / 2
-            half_height = height / 2
-            angle = abs(angle)
-            radians = math.radians(angle)
-            x_offset = half_width * math.cos(radians)
-            y_offset = half_height * math.sin(radians)
-            return (center_x - x_offset, center_y - y_offset)  # Adjusted to ensure center positioning
+from kivy.properties import NumericProperty
 
-    
-    def set_needle_params(self, width, height):
-        needle = self.ids.needle
-        needle.size_hint = (width, height)
-    def update_compass(self, angle):
-        self.needle.angle = -angle
+class CompassWidget(BoxLayout):
+    needle_angle = NumericProperty(0)
+
+    def update_compass(self, heading):
+        # heading: 0-360, rotate needle accordingly
+        self.needle_angle = -heading
+
     def update_angle(self, dt):
         # Example: Rotate the needle randomly between 0 and 360 degrees.
         angle = random.uniform(0, 360)
         self.update_compass(angle)
-    pass
 
 
 
@@ -186,376 +177,279 @@ class SplashScreen(Screen):
         self.manager.current = 'main'
         
         maximize_window()
+
     def _update_rect(self, instance, value):
         self.rect.size = instance.size
         self.rect.pos = instance.pos
 
 # Main Screen
-class MainScreen(Screen):
 
+# --- Navigation Screen for Autonomous Navigation ---
+
+
+
+class NavigationScreen(Screen):
+
+    def __init__(self, **kwargs):
+        super(NavigationScreen, self).__init__(**kwargs)
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        self.path_points = []  # List of (lat, lon) tuples
+        self.sim_index = 0
+        self.sim_gps_data = [  # Simulated GPS path
+            (12.9716, 77.5946),
+            (12.9720, 77.5950),
+            (12.9725, 77.5955),
+            (12.9730, 77.5960),
+            (12.9735, 77.5965),
+            (12.9740, 77.5970),
+            (12.9745, 77.5975),
+            (12.9750, 77.5980)
+        ]
+        try:
+            self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
+            self.marker = MapMarker(lat=12.9716, lon=77.5946)
+            self.mapview.add_marker(self.marker)
+            layout.add_widget(self.mapview)
+            # For path visualization, use MapMarker for each point (polyline not natively supported)
+            self.path_markers = []
+            Clock.schedule_interval(self.update_rover_position, 2)  # Update every 2 seconds
+        except Exception:
+            if WebView:
+                self.webview = WebView(url="https://www.google.com/maps")
+                layout.add_widget(self.webview)
+            else:
+                layout.add_widget(Label(text="WebView not available. Please install kivy_garden.webview."))
+        back_btn = Button(text="Back to Main", size_hint=(1, 0.1), background_color=(0.2,0.5,0.8,1))
+        back_btn.bind(on_release=self.go_back)
+        layout.add_widget(back_btn)
+        self.add_widget(layout)
+
+    def update_rover_position(self, dt):
+        # Simulate receiving a new GPS point
+        if self.sim_index < len(self.sim_gps_data):
+            lat, lon = self.sim_gps_data[self.sim_index]
+            self.sim_index += 1
+        else:
+            lat, lon = self.sim_gps_data[-1]
+        # Update marker position
+        self.marker.lat = lat
+        self.marker.lon = lon
+        # Add to path and show path markers
+        self.path_points.append((lat, lon))
+        # Remove old path markers
+        for m in self.path_markers:
+            self.mapview.remove_marker(m)
+        self.path_markers = []
+        # Add new path markers (as small dots)
+        for pt in self.path_points:
+            m = MapMarker(lat=pt[0], lon=pt[1])
+            m.size = (16, 16)
+            self.mapview.add_marker(m)
+            self.path_markers.append(m)
+        # Do not re-add the main marker; just update its position
+
+    def go_back(self, instance):
+        self.manager.current = 'main'
+
+class MainScreen(Screen):
+    def _update_rect(self, instance, value):
+        self.rect.size = instance.size
+        self.rect.pos = instance.pos
     img_src = StringProperty("./assets/bad_batt.png")
     jetsonimg_src = StringProperty("./assets/bad_batt.png")
     img_src_armstate = StringProperty("./assets/no_home.png")
     battimg = None
+
+    def goto_navigation(self, instance):
+        self.manager.current = 'navigation'
+
+    def goto_mapplot(self, instance):
+        self.manager.current = 'mapplot'
+
+
     def __init__(self, **kwargs):
         super(MainScreen, self).__init__(**kwargs)
         with self.canvas.before:
-            Color(0.75, 0.75, 0.75, 1)  # Gray metal color
+            Color(0.75, 0.75, 0.75, 1)
             self.rect = Rectangle(size=self.size, pos=self.pos)
         self.bind(size=self._update_rect, pos=self._update_rect)
 
         self.autoshowfullscreen = False
-        self.updatefullscreenval=False
-  
+        self.updatefullscreenval = False
         self.allvideopopups = []
-        
-
-
-        layout = BoxLayout(orientation='horizontal', padding=10, spacing=10, size_hint=(1, 1))
-
-        left_layout = BoxLayout(orientation='vertical', spacing=3, size_hint=(0.3, 1))
-
-        bottom_box = BoxLayout(orientation='vertical', spacing=3, size_hint=(1, 0.5))
-
-        clayout = BoxLayout(orientation='vertical')
-        # clayout.canvas.before.add(Color(0, 1, 0, 1))  # Green color
-        # clayout.canvas.before.add(Rectangle(size=clayout.size, pos=clayout.pos))
-
-        # Create your custom widget and add it to the layout
-        # self.compass_widget = CompassWidget()
-        # self.compass_widget = None
-        
-        # self.compass_widget.size_hint = (None, None)
-        # self.compass_widget.set_needle_params(1,1)
-
-        # print("surya",self.compass_widget.pos)
-        # streaming.setcompasswidget(self.compass_widget)
-        
-        # clayout.add_widget(self.compass_widget)
-
-        # self.buttons = ['Cam 1', 'Cam 2', 'Cam 3']
-        # for button_text in self.buttons:
-        #     btn = Button(text=button_text, size_hint=(1, None), height=40)
-        #     bottom_box.add_widget(btn)
-
-        self.battimg = Image(source=self.img_src,size_hint=(1, None))
-        self.armstateimg = Image(source=self.img_src_armstate,size_hint=(0.8, None))
-        self.battstate = ""
-
-        self.jetsonbattimg = Image(source=self.jetsonimg_src, size_hint=(1, None))
-
-        layouttoped = BoxLayout(orientation='horizontal')
-        mainbattview = BoxLayout(orientation='vertical',size_hint=(1, 1))
-        armposview = BoxLayout(orientation='vertical',size_hint=(1, 1))
-        batt_label = Label(text="Main Battery", size_hint=(1, 0.6),color=(1, 0, 1, 1))
-        armpos_label = Label(text="Arm position", size_hint=(1, 0.7),color=(1, 0, 1, 1))
-
-        # Add the images to the layout
-        mainbattview.add_widget(self.battimg)
-        mainbattview.add_widget(batt_label)
-
-        armposview.add_widget(self.armstateimg)
-        armposview.add_widget(armpos_label)
-
-        layouttoped.add_widget(mainbattview)
-        layouttoped.add_widget(armposview)
-        
-
-        card = MDCard(
-            orientation='vertical',
-            size_hint=(1, 1.8),
-            pos_hint={"center_x": 0.5, "center_y": 0.5},
-            elevation=3,
-            md_bg_color="white"
-        )
-
-
-        card.add_widget(layouttoped)
-
-        bottom_box.add_widget(card)  # Ensure this image exists
-        
-
-        self.switch = Switch(active=False)  # Switch starts in the off position
-        self.switch.bind(active=self.on_switch_active)  # Bind the switch to a callback function
-
-        # Create a label to display the switch state
-        self.switch_label = Label(text="Switch is OFF")
-
-        card = MDCard(
-            orientation='vertical',
-                size_hint=(1, 1.5),
-                pos_hint={"center_x": 0.5, "center_y": 0.5},
-                elevation=1,
-                md_bg_color="white",
-                padding=10
-            )
-        jetson_batt_label = Label(text="Jetson battery", size_hint=(1, 0.7),color=(1, 0, 1, 1))
-        
-        switch_label = Label(text="Switch", size_hint=(1, 0.7),color=(1, 0, 1, 1))
-        
-        
-        layouttoped2 = BoxLayout(orientation='horizontal')
-
-        layouttoped21 = BoxLayout(orientation='vertical')
-        layouttoped21.add_widget(self.jetsonbattimg)
-        layouttoped21.add_widget(jetson_batt_label)
-
-        layouttoped22 = BoxLayout(orientation='vertical')
-        layouttoped22.add_widget(self.switch)
-        layouttoped22.add_widget(switch_label)
-
-        layouttoped2.add_widget(layouttoped21)
-        layouttoped2.add_widget(layouttoped22)
-
-
-        card.add_widget(layouttoped2)
-        
-        bottom_box.add_widget(card)
-
-        left_layout.add_widget(bottom_box)
-        left_layout.add_widget(clayout)
-
-        # Right grid for videos
-        self.right_grid = GridLayout(cols=2, spacing=5, padding=5, size_hint=(0.7, 1))  # Adjusted size_hint for right grid
         self.image_widgets = []
-        for _ in range(3):
-            image = Image(source="./assets/no_cam.png")
-            # image.bind(on_touch_down=self.on_video_touch)
-            self.image_widgets.append(image)
+
+        # --- Top Navigation Bar ---
+        top_nav = BoxLayout(orientation='horizontal', size_hint_y=None, height=80, padding=[10, 5, 10, 5], spacing=16)
+        # Add background color to top bar
+        with top_nav.canvas.before:
+            Color(0.2, 0.3, 0.5, 1)  # Example: blue-ish color, adjust as needed
+            self.topbar_rect = Rectangle(size=top_nav.size, pos=top_nav.pos)
+        def update_topbar_rect(instance, value):
+            self.topbar_rect.size = top_nav.size
+            self.topbar_rect.pos = top_nav.pos
+        top_nav.bind(size=update_topbar_rect, pos=update_topbar_rect)
+        # App logo/icon (moderate size)
+        top_nav.add_widget(Image(source='./assets/logo.png', size_hint_x=0.13, size_hint_y=1, allow_stretch=True, keep_ratio=True))
+        # Main Battery icon (moderate size)
+        self.battimg = Image(source=self.img_src, size_hint_x=0.10, size_hint_y=1, allow_stretch=True, keep_ratio=True)
+        top_nav.add_widget(self.battimg)
+        # Jetson Battery icon (moderate size)
+        self.jetsonbattimg = Image(source=self.jetsonimg_src, size_hint_x=0.10, size_hint_y=1, allow_stretch=True, keep_ratio=True)
+        top_nav.add_widget(self.jetsonbattimg)
+        # Arm Position icon (moderate size)
+        self.armstateimg = Image(source=self.img_src_armstate, size_hint_x=0.10, size_hint_y=1, allow_stretch=True, keep_ratio=True)
+        top_nav.add_widget(self.armstateimg)
+        # Switch and label
+        self.top_switch = Switch(active=False, size_hint_x=0.07, size_hint_y=1)
+        self.top_switch.bind(active=self.on_switch_active)
+        top_nav.add_widget(self.top_switch)
+        self.top_switch_label = Label(text='Auto Cam Zoom', font_size='16sp', color=(0.2, 0.5, 0.8, 1), size_hint_x=0.12, size_hint_y=1, halign='left', valign='middle')
+        # top_nav.add_widget(self.top_switch_label)
+        # Switch state label
+        self.top_switch_state = Label(text='Switch is OFF', font_size='16sp', color=(0.2, 0.5, 0.8, 1), size_hint_x=0.12, size_hint_y=1, halign='left', valign='middle')
+        # top_nav.add_widget(self.top_switch_state)
+        # Add Map Plotting button to the top bar
+        mapplot_btn_top = Button(text="Map Plotting", size_hint_x=0.16, size_hint_y=1, background_color=(0.1, 0.7, 0.3, 1), font_size='16sp')
+        mapplot_btn_top.bind(on_release=self.goto_mapplot)
+        top_nav.add_widget(mapplot_btn_top)
+        # Trailing spacer (expands to fill remaining space)
+        top_nav.add_widget(Label(size_hint_x=1, size_hint_y=1))
+
+        # --- Root layout: vertical, add top_nav, spacer, then main_layout ---
+        root_layout = BoxLayout(orientation='vertical', size_hint=(1, 1))
+        # Top bar: fixed height (moderate)
+        top_nav.size_hint_y = None
+        top_nav.height = 80
+        root_layout.add_widget(top_nav)
+        # Add vertical spacer below top bar
+        root_layout.add_widget(Label(size_hint_y=None, height=20))
+
+        # Main horizontal layout: left = map (square) + compass, right = camera & controls
+        main_layout = BoxLayout(orientation='horizontal', padding=10, spacing=10, size_hint_y=1)
+
+        # --- Left: MapView (top) and CompassWidget (bottom) with improved alignment ---
+        left_panel = BoxLayout(orientation='vertical', spacing=8, size_hint=(0.42, 1))
+        # MapView container (60% height)
+        mapview_container = BoxLayout(size_hint=(1, 0.6), padding=0)
+        try:
+            self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
+            self.mapview.size_hint = (1, 1)
+        except Exception:
+            if WebView:
+                self.mapview = WebView(url="https://www.google.com/maps")
+                self.mapview.size_hint = (1, 1)
+            else:
+                self.mapview = Label(text="MapView/WebView not available.", size_hint=(1, 1))
+        mapview_container.add_widget(self.mapview)
+        left_panel.add_widget(mapview_container)
+
+        # --- Below MapView: Two equal squares (left: compass, right: start/stop buttons) ---
+        squares_row = BoxLayout(orientation='horizontal', size_hint=(1, 0.4), spacing=8)
+        # Left square: CompassWidget centered
+        compass_square = BoxLayout(size_hint=(0.5, 1), padding=0)
+        self.compass = CompassWidget()
+        compass_square.add_widget(Widget(size_hint_x=0.1))
+        compass_square.add_widget(self.compass)
+        compass_square.add_widget(Widget(size_hint_x=0.1))
+        def update_compass_size(*args):
+            h = compass_square.height
+            self.compass.size = (h * 0.95, h * 0.95)
+        compass_square.bind(height=update_compass_size)
+        squares_row.add_widget(compass_square)
+        # Right square: Start/Stop buttons vertically centered
+        button_square = BoxLayout(size_hint=(0.5, 1), orientation='vertical')
+        button_container = BoxLayout(orientation='vertical', size_hint=(1, 0.6), spacing=16)
+        button_container.add_widget(Widget(size_hint_y=0.2))
+        start_btn = Button(text='Start', size_hint=(1, 0.3), font_size='20sp', background_color=(0.1, 0.7, 0.3, 1))
+        stop_btn = Button(text='Stop', size_hint=(1, 0.3), font_size='20sp', background_color=(0.8, 0.2, 0.2, 1))
+        button_container.add_widget(start_btn)
+        button_container.add_widget(stop_btn)
+        button_container.add_widget(Widget(size_hint_y=0.2))
+        button_square.add_widget(Widget(size_hint_y=0.2))
+        button_square.add_widget(button_container)
+        button_square.add_widget(Widget(size_hint_y=0.2))
+        squares_row.add_widget(button_square)
+        left_panel.add_widget(squares_row)
+
+        main_layout.add_widget(left_panel)
+
+        # --- Right: Camera images, battery, controls, etc. ---
+        right_layout = BoxLayout(orientation='vertical', spacing=0, size_hint=(0.58, 1), padding=[0, 0, 0, 0])
+        # Camera layout: two cameras side by side on top, one below, all square and same size, visually balanced and always centered
+        camera_layout = GridLayout(cols=2, rows=2, spacing=5, size_hint=(1, 0.8), padding=[24, 8, 24, 24])
+        card_size_hint = (1, 1)
+        for i in range(3):
+            img = Image(source='./assets/no_cam.png', allow_stretch=True, keep_ratio=True)
+            self.image_widgets.append(img)
             card = MDCard(
-            orientation='vertical',
-                size_hint=(1, 1),
-                pos_hint={"center_x": 0.5, "center_y": 0.5},
-                elevation=1,
-                md_bg_color="white",
-                padding=10
+                orientation='vertical',
+                size_hint=card_size_hint,
+                padding=0,
+                elevation=2,
+                radius=[16, 16, 16, 16],
+                shadow_softness=2
             )
+            card.add_widget(img)
+            camera_layout.add_widget(card)
+        camera_layout.add_widget(Widget(size_hint=card_size_hint))
+        right_layout.add_widget(camera_layout)
+        # Info and controls
+        info_controls_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint=(1, 0.3))
+        info_panel = GridLayout(cols=2, rows=5, spacing=8, size_hint=(0.55, 1))
+        for _ in range(10):
+            info_panel.add_widget(Label())
+        right_panel = BoxLayout(orientation='vertical', spacing=10, size_hint=(0.45, 1))
+        right_panel.add_widget(Label(size_hint=(1, 1)))
+        info_controls_layout.add_widget(info_panel)
+        info_controls_layout.add_widget(right_panel)
+        right_layout.add_widget(info_controls_layout)
+        main_layout.add_widget(right_layout)
+        root_layout.add_widget(main_layout)
+        # Ensure MainScreen uses all available space
+        self.size_hint = (1, 1)
+        self.add_widget(root_layout)
 
 
-            card.add_widget(image)
-
-            self.right_grid.add_widget(card)
-            streaming.bind(update_event=self.update_joystickview)
-        
-        streaming.bind(update_utils=self.update_utilsdata_ui)
-
-        layout.add_widget(left_layout)
-        layout.add_widget(self.right_grid)
-        self.add_widget(layout)
-        streaming.videosections = self.image_widgets
-
-        self.queue = Queue()
-
-        # Start the thread to capture video feed
-        # self.capture_thread = threading.Thread(target=self.capture_video_feed)
-        # self.capture_thread.daemon = True
-        # self.capture_thread.start()
-        toast("App started")
-
-       
-
-        self.bind(size=self.on_size)  # Bind the on_size method to be called whenever the size changes
-    
-    # Start the thread to capture video feed
     def on_switch_active(self, instance, value):
-        # Update the label text when the switch is toggled
-        
-        if value:
-            self.switch_label.text = "Switch is ON"
-            self.autoshowfullscreen=True
-            toast("Auto cam zoom mode ON")
-            
-        else:
-            self.switch_label.text = "Switch is OFF"
-            self.autoshowfullscreen=False
-            toast("Auto cam zoom mode OFF")
-
-            if(self.updatefullscreenval==True):
-                self.dismiss_full_screen(self.popup)
+        pass
 
 
-            
-    def update_utilsdata_ui(self, instance, value):
-        print("surya", float(value["batvoltage"])<=25)
-        
-        if int(float(value["batvoltage"])) <= 25:
-            print("low voltage")
-            self.img_src = './assets/bad_batt.png'
-        else:
-            print("high voltage")
-            self.img_src = './assets/good_batt.png'
-
-        if int(float(value["jetsonvoltage"])) <= 11.5:
-            print("low voltage")
-            self.jetsonimg_src = './assets/bad_batt.png'
-        else:
-            print("high voltage")
-            self.jetsonimg_src = './assets/good_batt.png'
-
-        if int(value["armstate"]) == 1:
-            self.img_src_armstate = "./assets/no_home.png"
-        else:
-            self.img_src_armstate = "./assets/at_home.png"
-
-      
-        Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
-
-    def update_ui_on_main_thread(self):
-        # Perform any additional UI updates here if needed
-        self.battimg.source = self.img_src
-        self.armstateimg.source = self.img_src_armstate
-        self.jetsonbattimg.source = self.jetsonimg_src
-      
-  
-        
-
-    def update_joystickview(self, instance, value):
-        if(self.autoshowfullscreen):
-            value = int(value)
-
-            if(value >= 0):
-                # self.on_image_click(self.image_widgets[value])
-                self.close_all_popups()
-                img = None
-                if(value == 0):
-                    img = self.image_widgets[value]
-                elif(value == 1):
-                    img = self.image_widgets[value]
-                elif(value == 2):
-                    img = self.image_widgets[value]
-                    
-                
-                class SimulatedTouch:
-                    def __init__(self, pos):
-                        self.pos = pos
-
-                simulated_touch = SimulatedTouch(img.center)
-               
-                Clock.schedule_once(lambda dt: img.dispatch('on_touch_down', simulated_touch), 0)
-            
-
-            if(value <0):
-                if(self.updatefullscreenval==True):
-                    # self.dismiss_full_screen(self.popup)
-                    self.close_all_popups()
-
-   
-   
-    def update_image(self, dt):
-              
-            keys = list(self.videoreceiver.video_frames.keys())
-            for i, identifier in enumerate(keys):
-                if identifier in self.videoreceiver.video_frames:
-                    frame = self.videoreceiver.video_frames[identifier]
-                    if frame is not None:
-                        # Convert the frame to Kivy texture
-                        # Convert frame to uint8 if necessary (ensure it's already in uint8 format)
-                        if frame.dtype != np.uint8:
-                            frame = frame.astype(np.uint8)
-                        # Add text to the frame
-                        cv2.putText(frame, f"cam{i}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-                        
-                        # Flip the frame if needed (adjust as per your requirement)
-                        frame = cv2.flip(frame, 0)
-
-                        # Convert frame to bytes for texture blitting
-                        buffer = frame.tobytes()
-                        texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
-                        texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
-
-                        # Update the image widget with the new texture
-                        self.image_widgets[i].texture = texture
-                   
-
-    def create_texture(self, frame_rgb):
-        texture = Texture.create(size=(frame_rgb.shape[1], frame_rgb.shape[0]))
-        texture.blit_buffer(frame_rgb.tobytes(), colorfmt='rgb', bufferfmt='ubyte')
-        return texture
-    
-    def updatefullscreen(self,image_widget,fullscreenview):
-        fullscreenview.texture = image_widget.texture
 
 
-    def on_image_click(self, image_widget):
-        texture = image_widget.texture
-        self.updatefullscreenval=True
-        if texture:
-            popup_layout = BoxLayout(orientation='vertical')
-            popup_image = Image(texture=texture, size_hint=(1, 1),allow_stretch=True, keep_ratio=False)
-            close_btn = Button(text='Close', size_hint=(1, 0.1))
-            popup_layout.add_widget(popup_image)
-            popup_layout.add_widget(close_btn)
+# --- Map Plotting Screen ---
+class MapPlotScreen(Screen):
+    def __init__(self, **kwargs):
+        super(MapPlotScreen, self).__init__(**kwargs)
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        try:
+            self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
+            layout.add_widget(self.mapview)
+            # Add controls for plotting (future: add waypoints, clear, etc.)
+        except Exception:
+            if WebView:
+                self.webview = WebView(url="https://www.google.com/maps")
+                layout.add_widget(self.webview)
+            else:
+                layout.add_widget(Label(text="WebView not available. Please install kivy_garden.webview."))
+        back_btn = Button(text="Back to Main", size_hint=(1, 0.1), background_color=(0.2,0.5,0.8,1))
+        back_btn.bind(on_release=self.go_back)
+        layout.add_widget(back_btn)
+        self.add_widget(layout)
 
-            self.popup = Popup(content=popup_layout, auto_dismiss=False, size_hint=(1, 1))
-            self.allvideopopups.append(self.popup)
-            close_btn.bind(on_release=lambda instance: self.dismiss_full_screen(self.allvideopopups[-1]))
-
-            self.popup.open()
-            Clock.schedule_interval(lambda dt: self.updatefullscreen(image_widget,popup_image), 1.0 / 30.0)
-
-            # self.updatefullscreenthread = threading.Thread(target=self.updatefullscreen,args=(image_widget,popup_image,))
-            # self.updatefullscreenthread.start()
-           
-    
-    def dismiss_full_screen(self, popup):
-            # Stop updating the image widget
-            Clock.unschedule(self.updatefullscreen)
-            # Dismiss the popup
-            popup.dismiss()
-            # Set update_full_screen_val to False
-            self.update_full_screen_val = False
- 
-    def close_all_popups(self):
-            for popup in self.allvideopopups:
-                # popup.dismiss()
-                self.dismiss_full_screen(popup)
-            if len(self.allvideopopups) > 10:
-                # Delete the first item (index 0)
-                del self.allvideopopups[0]
-            # self.allvideopopups.clear()
-            
-    def on_enter(self):
-        # Bind the image click event
-        for image_widget in self.image_widgets:
-            image_widget.bind(on_touch_down=self.on_image_touch)
-
-         # Schedule the update of images in the GUI
-        self.videoreceiver = VideoReceiver()
-        # self.videoreceiver.bind(streamchange=self.capture_video_feed)  # Bind the switch to a callback function
+    def go_back(self, instance):
+        self.manager.current = 'main'
 
 
-        Clock.schedule_interval(self.update_image, 1.0 / 30.0)  # Update at 30 FPS
-
-
-       
-
-    def on_image_touch(self, image_widget, touch):
-        if image_widget.collide_point(*touch.pos):
-            self.on_image_click(image_widget)
-
-    def on_leave(self):
-        # Unbind the image click event
-        for image_widget in self.image_widgets:
-            image_widget.unbind(on_touch_down=self.on_image_touch)
-
-    def on_size(self, instance, size):
-        # Update the size of the compass widget dynamically based on the available space
-        # self.compass_widget.size = (size[0] * 0.3, size[1] * 0.4)  # Adjust size as needed
-        for image_widget in self.image_widgets:
-            image_widget.size = (size[0] * 0.35, size[1] * 0.45)
-
-    def _update_rect(self, instance, value):
-            self.rect.size = instance.size
-            self.rect.pos = instance.pos
-
-# App class
 class RoverApp(MDApp):
     def build(self):
         sm = ScreenManager()
         sm.add_widget(SplashScreen(name='splash'))
         main_screen = MainScreen(name='main')
         sm.add_widget(main_screen)
-        
+        sm.add_widget(NavigationScreen(name='navigation'))
+        sm.add_widget(MapPlotScreen(name='mapplot'))
+        sm.current = 'main'
 
         return sm
 

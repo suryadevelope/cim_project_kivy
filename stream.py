@@ -177,7 +177,26 @@ class Stream(EventDispatcher):
                 x_movement = self.map_input_to_movement(x_axis, dead_zone=0.2)  # Example dead zone of 0.1
                 y_movement = self.map_input_to_movement(y_axis, dead_zone=0.2)  # Example dead zone of 0.1
 
-                if y_movement > 0:
+
+                
+                speed = (abs(y_movement) + abs(x_movement))/2
+
+                # Check diagonal directions first
+                if y_movement < 0 and x_movement < 0:
+                    direction = "7"  # Forward-left
+                    self.updatevideoview(0)
+                elif y_movement < 0 and x_movement > 0:
+                    direction = "9"  # Forward-right
+                    self.updatevideoview(0)
+                elif y_movement > 0 and x_movement < 0:
+                    direction = "1"  # Backward-left
+                    self.updatevideoview(1)
+                elif y_movement > 0 and x_movement > 0:
+                    direction = "3"  # Backward-right
+                    self.updatevideoview(1)
+
+
+                elif y_movement > 0:
                     speed = abs(y_movement)
                     direction = "5"#backward
                     self.updatevideoview(1)
@@ -224,7 +243,7 @@ class Stream(EventDispatcher):
                 data, addr = Listen_socket.recvfrom(1024)
                 compassdata = str(data.decode())
 
-                if(self.compasswidget!=None and compassdata!='None'):
+                if(compassdata!='None'):
                     # print(compassdata)
                     if(compassdata.startswith("#")):
                         print("PRABHU",compassdata[1:])
@@ -238,7 +257,7 @@ class Stream(EventDispatcher):
                             
 
                             if(parts[3]!="None"):
-                                self.compasswidget.update_compass(float(parts[3]))
+                                # self.compasswidget.update_compass(float(parts[3]))
                                 self.dataconfirm["compass"] = True
                         else:
                             print("utils data missing ")
