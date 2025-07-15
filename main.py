@@ -473,26 +473,21 @@ class MainScreen(Screen):
             from kivy_garden.mapview import MapView
             if lat is not None and lng is not None and isinstance(self.mapview, MapView):
                 try:
-                    # Remove old marker if it exists and is not the same object
-                    if self.gps_marker is not None and self.gps_marker not in self.mapview._markers:
+                    # Always remove old marker before adding a new one
+                    if self.gps_marker is not None:
+                        try:
+                            self.mapview.remove_marker(self.gps_marker)
+                        except Exception:
+                            pass
                         self.gps_marker = None
-                    if self.gps_marker is None:
-                        print("[DEBUG] Creating new GPS marker...")
-                        self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
-                        self.gps_marker.size = (30, 30)
-                        if heading is not None:
-                            self.gps_marker.heading = float(heading)
-                        self.mapview.add_marker(self.gps_marker)
-                        print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
-                        self.mapview.center_on(float(lat), float(lng))
-                    else:
-                        print("[DEBUG] Updating existing GPS marker...")
-                        self.gps_marker.lat = float(lat)
-                        self.gps_marker.lon = float(lng)
-                        self.gps_marker.size = (30, 30)
-                        if heading is not None:
-                            self.gps_marker.heading = float(heading)
-                        print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
+                    print("[DEBUG] Creating new GPS marker...")
+                    self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
+                    self.gps_marker.size = (30, 30)
+                    if heading is not None:
+                        self.gps_marker.heading = float(heading)
+                    self.mapview.add_marker(self.gps_marker)
+                    print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
+                    self.mapview.center_on(float(lat), float(lng))
                     self._last_gps_lat = float(lat)
                     self._last_gps_lon = float(lng)
                     if not self._user_interacting:
@@ -689,25 +684,21 @@ class MapPlotScreen(Screen):
         self.add_widget(layout)
 
     def update_gps_marker(self, lat, lng, heading):
-        if self.gps_marker is not None and self.gps_marker not in self.mapview._markers:
+        # Always remove old marker before adding a new one
+        if self.gps_marker is not None:
+            try:
+                self.mapview.remove_marker(self.gps_marker)
+            except Exception:
+                pass
             self.gps_marker = None
-        if self.gps_marker is None:
-            try:
-                self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
-                self.gps_marker.size = (30, 30)
-                if heading is not None:
-                    self.gps_marker.heading = float(heading)
-                self.mapview.add_marker(self.gps_marker)
-            except Exception as e:
-                print(f"Error creating MapPlotScreen GPS marker: {e}")
-        else:
-            try:
-                self.gps_marker.lat = float(lat)
-                self.gps_marker.lon = float(lng)
-                if heading is not None:
-                    self.gps_marker.heading = float(heading)
-            except Exception as e:
-                print(f"Error updating MapPlotScreen GPS marker: {e}")
+        try:
+            self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
+            self.gps_marker.size = (30, 30)
+            if heading is not None:
+                self.gps_marker.heading = float(heading)
+            self.mapview.add_marker(self.gps_marker)
+        except Exception as e:
+            print(f"Error creating MapPlotScreen GPS marker: {e}")
 
     def go_back(self, instance):
         self.manager.current = 'main'
