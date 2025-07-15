@@ -477,7 +477,8 @@ class MainScreen(Screen):
                 if screen_name in app.root.screen_names:
                     screen = app.root.get_screen(screen_name)
                     if hasattr(screen, 'update_gps_marker'):
-                        screen.update_gps_marker(lat, lng, heading)
+                        # Schedule the update on the main thread
+                        Clock.schedule_once(lambda dt, s=screen, la=lat, ln=lng, h=heading: s.update_gps_marker(la, ln, h))
         # Update UI on main thread
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
