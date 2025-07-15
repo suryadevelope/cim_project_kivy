@@ -466,41 +466,18 @@ class MainScreen(Screen):
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
         heading = value.get("compass")
-        print(f"[DEBUG] mapview type: {type(self.mapview)}")
-        print(f"[DEBUG] lat: {lat}, lng: {lng}")
         from kivy.clock import Clock
-        def _update_marker_on_main_thread(dt):
-            from kivy_garden.mapview import MapView
-            if lat is not None and lng is not None and isinstance(self.mapview, MapView):
-                try:
-                    # Always remove old marker before adding a new one
-                    if self.gps_marker is not None:
-                        try:
-                            self.mapview.remove_marker(self.gps_marker)
-                        except Exception:
-                            pass
-                        self.gps_marker = None
-                    print("[DEBUG] Creating new GPS marker...")
-                    self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
-                    self.gps_marker.size = (30, 30)
-                    if heading is not None:
-                        self.gps_marker.heading = float(heading)
-                    self.mapview.add_marker(self.gps_marker)
-                    print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
-                    self.mapview.center_on(float(lat), float(lng))
-                    self._last_gps_lat = float(lat)
-                    self._last_gps_lon = float(lng)
-                    if not self._user_interacting:
-                        self._animate_center_on(float(lat), float(lng))
-                except Exception as e:
-                    print(f"Error updating GPS marker: {e}")
-        Clock.schedule_once(_update_marker_on_main_thread)
-        # Also update MapPlotScreen marker if it exists and is active
         app = App.get_running_app()
+        # Store latest GPS data in app
+        if hasattr(app, "latest_gps"):
+            app.latest_gps = {"lat": lat, "lng": lng, "heading": heading}
+        # Update both MainScreen and MapPlotScreen markers
         if hasattr(app, 'root') and app.root is not None:
-            mapplot_screen = app.root.get_screen('mapplot') if 'mapplot' in app.root.screen_names else None
-            if mapplot_screen and hasattr(mapplot_screen, 'gps_marker') and app.root.current == 'mapplot':
-                mapplot_screen.update_gps_marker(lat, lng, heading)
+            for screen_name in ['main', 'mapplot']:
+                if screen_name in app.root.screen_names:
+                    screen = app.root.get_screen(screen_name)
+                    if hasattr(screen, 'update_gps_marker'):
+                        screen.update_gps_marker(lat, lng, heading)
         # Update UI on main thread
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
@@ -584,7 +561,11 @@ class MainScreen(Screen):
         if len(self.allvideopopups) > 10:
             del self.allvideopopups[0]
 
-    def on_enter(self):
+    def on_enter(self, *args):
+        app = App.get_running_app()
+        gps = getattr(app, "latest_gps", None)
+        if gps and gps["lat"] is not None and gps["lng"] is not None:
+            self.update_gps_marker(gps["lat"], gps["lng"], gps["heading"])
         for image_widget in self.image_widgets:
             image_widget.bind(on_touch_down=self.on_image_touch)
         Clock.schedule_interval(self.update_image, 1.0 / 30.0)
@@ -713,6 +694,7 @@ class MapPlotScreen(Screen):
 
 
 class RoverApp(MDApp):
+    latest_gps = {"lat": None, "lng": None, "heading": None}
     def build(self):
         sm = ScreenManager()
         sm.add_widget(SplashScreen(name='splash'))
@@ -721,7 +703,6 @@ class RoverApp(MDApp):
         sm.add_widget(NavigationScreen(name='navigation'))
         sm.add_widget(MapPlotScreen(name='mapplot'))
         # sm.current = 'main'
-
         return sm
 
 if __name__ == '__main__':
