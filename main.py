@@ -356,9 +356,17 @@ class MainScreen(Screen):
         try:
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             self.mapview.size_hint = (1, 1)
-            # Add GPS marker
-            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/rover_icon.png')
-            self.mapview.add_marker(self.gps_marker)
+            # Add GPS marker (small size)
+            self.gps_marker = None  # Start with no marker
+            # --- Add state for user interaction ---
+            self._user_interacting = False
+            self._recenter_timer = None
+            self._last_gps_lat = 12.9716
+            self._last_gps_lon = 77.5946
+            # Bind touch events to mapview
+            self.mapview.bind(on_touch_down=self._on_map_touch_down)
+            self.mapview.bind(on_touch_move=self._on_map_touch_move)
+            self.mapview.bind(on_touch_up=self._on_map_touch_up)
         except Exception:
             if WebView:
                 self.mapview = WebView(url="https://www.google.com/maps")
@@ -444,9 +452,7 @@ class MainScreen(Screen):
         else:
             self.img_src_armstate = "./assets/at_home.png"
 
-
         print("Utils data:", value.get("gps"))
-        # gpsvalue = json.loads(value.get("gps"))
         print("Utils data:", value)
 
         gpsvalue = ast.literal_eval(value.get("gps"))
@@ -460,12 +466,27 @@ class MainScreen(Screen):
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
         heading = value.get("compass")
-        if lat is not None and lng is not None and self.gps_marker:
+        if lat is not None and lng is not None:
             try:
-                self.gps_marker.lat = float(lat)
-                self.gps_marker.lon = float(lng)
-                if heading is not None:
-                    self.gps_marker.heading = float(heading)
+                if self.gps_marker is None:
+                    # Create marker if it doesn't exist
+                    self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
+                    self.gps_marker.size = (20, 20)
+                    if heading is not None:
+                        self.gps_marker.heading = float(heading)
+                    self.mapview.add_marker(self.gps_marker)
+                else:
+                    # Update marker position and heading
+                    self.gps_marker.lat = float(lat)
+                    self.gps_marker.lon = float(lng)
+                    if heading is not None:
+                        self.gps_marker.heading = float(heading)
+                # Save last GPS for recentering
+                self._last_gps_lat = float(lat)
+                self._last_gps_lon = float(lng)
+                # If not user interacting, animate center on marker
+                if not self._user_interacting:
+                    self._animate_center_on(float(lat), float(lng))
             except Exception as e:
                 print(f"Error updating GPS marker: {e}")
         # Also update MapPlotScreen marker if it exists and is active
@@ -581,6 +602,49 @@ class MainScreen(Screen):
     def goto_mapplot(self, instance):
         if self.manager:
             self.manager.current = 'mapplot'
+
+    # --- MapView user interaction handlers ---
+    def _on_map_touch_down(self, instance, touch):
+        if self.mapview.collide_point(*touch.pos):
+            self._user_interacting = True
+            if self._recenter_timer:
+                Clock.unschedule(self._recenter_timer)
+        return False
+    def _on_map_touch_move(self, instance, touch):
+        if self.mapview.collide_point(*touch.pos):
+            self._user_interacting = True
+            if self._recenter_timer:
+                Clock.unschedule(self._recenter_timer)
+        return False
+    def _on_map_touch_up(self, instance, touch):
+        if self.mapview.collide_point(*touch.pos):
+            self._user_interacting = False
+            # Start timer to recenter after 3 seconds
+            if self._recenter_timer:
+                Clock.unschedule(self._recenter_timer)
+            self._recenter_timer = Clock.schedule_once(self._maybe_recenter_map, 3)
+        return False
+    def _maybe_recenter_map(self, dt):
+        # Check if marker is out of view, then recenter
+        if self.gps_marker:
+            lat, lon = self.gps_marker.lat, self.gps_marker.lon
+            if not self._is_marker_visible(lat, lon):
+                self._animate_center_on(lat, lon)
+    def _is_marker_visible(self, lat, lon):
+        # Check if marker is within current map bounds
+        try:
+            bbox = self.mapview.get_bbox()
+            min_lat, min_lon, max_lat, max_lon = bbox
+            return (min_lat <= lat <= max_lat) and (min_lon <= lon <= max_lon)
+        except Exception:
+            return True  # If error, assume visible
+    def _animate_center_on(self, lat, lon):
+        # Smoothly animate the map to center on the marker
+        try:
+            self.mapview.center_on(lat, lon)
+        except Exception:
+            self.mapview.lat = lat
+            self.mapview.lon = lon
 
 
 # --- Map Plotting Screen ---
