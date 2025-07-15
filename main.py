@@ -1,3 +1,5 @@
+import ast
+import json
 import os
 import random
 import threading
@@ -267,7 +269,7 @@ class RotatingMapMarker(MapMarker):
     heading = NumericProperty(0)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.logo_img = Image(source='./assets/logo.png', size_hint=(None, None), size=(48, 48))
+        self.logo_img = Image(source='./assets/rover_icon.png', size_hint=(None, None), size=(20, 20))
         self.add_widget(self.logo_img)
         self.logo_img.center = self.center
     def on_pos(self, *args):
@@ -355,7 +357,7 @@ class MainScreen(Screen):
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             self.mapview.size_hint = (1, 1)
             # Add GPS marker
-            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/logo.png')
+            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/rover_icon.png')
             self.mapview.add_marker(self.gps_marker)
         except Exception:
             if WebView:
@@ -441,15 +443,23 @@ class MainScreen(Screen):
             self.img_src_armstate = "./assets/no_home.png"
         else:
             self.img_src_armstate = "./assets/at_home.png"
+
+
+        print("Utils data:", value.get("gps"))
+        # gpsvalue = json.loads(value.get("gps"))
+        print("Utils data:", value)
+
+        gpsvalue = ast.literal_eval(value.get("gps"))
+
         # GPS info
-        self.satcount = str(value.get("satcount", "0"))
-        self.irnss_accuracy = str(value.get("irnss_accuracy", "N/A"))
-        self.fix_type = str(value.get("fix_type", "N/A"))
-        self.gps_fix = bool(value.get("fix", False))
+        self.satcount = str(gpsvalue.get("num_sats", "0"))
+        self.irnss_accuracy = str(gpsvalue.get("irnss_stats", "N/A"))
+        self.fix_type = str(gpsvalue.get("fix_type", "N/A"))
+        self.gps_fix = bool(gpsvalue.get("fix", False))
         # GPS marker update
-        lat = value.get("lat")
-        lng = value.get("lng")
-        heading = value.get("heading")
+        lat = gpsvalue.get("lat")
+        lng = gpsvalue.get("lng")
+        heading = value.get("compass")
         if lat is not None and lng is not None and self.gps_marker:
             try:
                 self.gps_marker.lat = float(lat)
@@ -584,7 +594,7 @@ class MapPlotScreen(Screen):
             layout.add_widget(self.mapview)
             # Add controls for plotting (future: add waypoints, clear, etc.)
             # Add GPS marker
-            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/logo.png')
+            self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/rover_icon.png')
             self.mapview.add_marker(self.gps_marker)
         except Exception:
             if WebView:

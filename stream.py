@@ -246,7 +246,7 @@ class Stream(EventDispatcher):
                 if(compassdata!='None'):
                     # print(compassdata)
                     if(compassdata.startswith("#")):
-                        print("PRABHU",compassdata[1:])
+                        # print("PRABHU",compassdata[1:])
                         parts = compassdata[1:].split("=")
                         if(len(parts)==5):
                             self.update_utils={
