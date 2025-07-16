@@ -396,8 +396,8 @@ class MainScreen(Screen):
         else:
             self.img_src_armstate = "./assets/at_home.png"
 
-        print("Utils data:", value.get("gps"))
-        print("Utils data:", value)
+        # print("Utils data:", value.get("gps"))
+        # print("Utils data:", value)
 
         gpsvalue = ast.literal_eval(value.get("gps"))
 
@@ -410,30 +410,30 @@ class MainScreen(Screen):
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
         heading = value.get("compass")
-        print(f"[DEBUG] mapview type: {type(self.mapview)}")
-        print(f"[DEBUG] lat: {lat}, lng: {lng}")
+        # print(f"[DEBUG] mapview type: {type(self.mapview)}")
+        # print(f"[DEBUG] lat: {lat}, lng: {lng}")
         from kivy.clock import Clock
         def _update_marker_on_main_thread(dt):
             from kivy_garden.mapview import MapView
             if lat is not None and lng is not None and isinstance(self.mapview, MapView):
                 try:
                     if self.gps_marker is None:
-                        print("[DEBUG] Creating new GPS marker...")
+                        # print("[DEBUG] Creating new GPS marker...")
                         self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
                         self.gps_marker.size = (30, 30)
                         if heading is not None:
                             self.gps_marker.heading = float(heading)
                         self.mapview.add_marker(self.gps_marker)
-                        print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
+                        # print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
                         self.mapview.center_on(float(lat), float(lng))
                     else:
-                        print("[DEBUG] Updating existing GPS marker...")
+                        # print("[DEBUG] Updating existing GPS marker...")
                         self.gps_marker.lat = float(lat)
                         self.gps_marker.lon = float(lng)
                         self.gps_marker.size = (30, 30)
                         if heading is not None:
                             self.gps_marker.heading = float(heading)
-                        print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
+                        # print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
                     self._last_gps_lat = float(lat)
                     self._last_gps_lon = float(lng)
                     if not self._user_interacting:
