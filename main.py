@@ -729,7 +729,10 @@ class MapPlotScreen(Screen):
     def update_path_line(self):
         # Remove old line
         if self.path_line and self.mapview.canvas:
-            self.mapview.canvas.remove(self.path_line)
+            try:
+                self.mapview.canvas.remove(self.path_line)
+            except ValueError:
+                pass  # Line was already removed or never added
             self.path_line = None
         # Need at least one user marker to draw path
         if not self.user_markers:
