@@ -661,14 +661,28 @@ class MapPlotScreen(Screen):
     gps_marker = None
     def __init__(self, **kwargs):
         super(MapPlotScreen, self).__init__(**kwargs)
+        self.user_markers = []  # List of (MapMarker, (lat, lon))
+        self.path_line = None
+        self.last_right_click_pos = None
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        # --- Top controls ---
+        controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=50, spacing=10)
+        self.zoom_my_loc_btn = Button(text="Zoom to My Location", size_hint=(None, 1), width=180)
+        self.zoom_last_marker_btn = Button(text="Zoom to Last Marker", size_hint=(None, 1), width=180)
+        self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
+        self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
+        controls.add_widget(self.zoom_my_loc_btn)
+        controls.add_widget(self.zoom_last_marker_btn)
+        controls.add_widget(Label(size_hint_x=1))
+        layout.add_widget(controls)
         try:
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             layout.add_widget(self.mapview)
-            # Add controls for plotting (future: add waypoints, clear, etc.)
             # Add GPS marker
             self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/rover_icon.png')
             self.mapview.add_marker(self.gps_marker)
+            # Bind right-click on map
+            self.mapview.bind(on_touch_down=self.on_map_touch_down)
         except Exception:
             if WebView:
                 self.webview = WebView(url="https://www.google.com/maps")
@@ -680,6 +694,87 @@ class MapPlotScreen(Screen):
         layout.add_widget(back_btn)
         self.add_widget(layout)
 
+    def zoom_to_my_location(self, instance):
+        if self.gps_marker:
+            try:
+                self.mapview.center_on(self.gps_marker.lat, self.gps_marker.lon)
+                self.mapview.zoom = 18
+            except Exception as e:
+                print(f"Zoom to my location error: {e}")
+
+    def zoom_to_last_marker(self, instance):
+        if self.user_markers:
+            marker, (lat, lon) = self.user_markers[-1]
+            try:
+                self.mapview.center_on(lat, lon)
+                self.mapview.zoom = 18
+            except Exception as e:
+                print(f"Zoom to last marker error: {e}")
+
+    def on_map_touch_down(self, mapview, touch):
+        # Only handle right-clicks
+        if 'button' in touch.profile and touch.button == 'right':
+            # Check if clicked on a marker
+            for marker, (lat, lon) in self.user_markers:
+                if marker.collide_point(*touch.pos):
+                    self.show_marker_context_menu(marker)
+                    return True
+            # Otherwise, show add marker menu
+            self.last_right_click_pos = touch.pos
+            self.show_map_context_menu(touch)
+            return True
+        return False
+
+    def show_map_context_menu(self, touch):
+        # Popup for adding marker
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        add_btn = Button(text="Add Marker Here", size_hint=(1, None), height=40)
+        cancel_btn = Button(text="Cancel", size_hint=(1, None), height=40)
+        content.add_widget(add_btn)
+        content.add_widget(cancel_btn)
+        popup = Popup(title="Map Options", content=content, size_hint=(None, None), size=(200, 150), auto_dismiss=False)
+        add_btn.bind(on_release=lambda inst: self.add_marker_at_touch(touch, popup))
+        cancel_btn.bind(on_release=popup.dismiss)
+        popup.open()
+
+    def add_marker_at_touch(self, touch, popup):
+        # Convert screen pos to lat/lon
+        lat, lon = self.mapview.get_latlon_at(*touch.pos)
+        marker = MapMarker(lat=lat, lon=lon, source='./assets/rover_icon.png')
+        marker.size = (30, 30)
+        marker.bind(on_touch_down=self.on_marker_touch_down)
+        self.mapview.add_marker(marker)
+        self.user_markers.append((marker, (lat, lon)))
+        popup.dismiss()
+        self.update_path_line()
+
+    def on_marker_touch_down(self, marker, touch):
+        if 'button' in touch.profile and touch.button == 'right' and marker.collide_point(*touch.pos):
+            self.show_marker_context_menu(marker)
+            return True
+        return False
+
+    def show_marker_context_menu(self, marker):
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        del_btn = Button(text="Delete Marker", size_hint=(1, None), height=40)
+        cancel_btn = Button(text="Cancel", size_hint=(1, None), height=40)
+        content.add_widget(del_btn)
+        content.add_widget(cancel_btn)
+        popup = Popup(title="Marker Options", content=content, size_hint=(None, None), size=(200, 150), auto_dismiss=False)
+        del_btn.bind(on_release=lambda inst: self.delete_marker(marker, popup))
+        cancel_btn.bind(on_release=popup.dismiss)
+        popup.open()
+
+    def delete_marker(self, marker, popup):
+        # Remove marker from map and list
+        for i, (m, (lat, lon)) in enumerate(self.user_markers):
+            if m == marker:
+                self.mapview.remove_marker(marker)
+                del self.user_markers[i]
+                break
+        popup.dismiss()
+        self.update_path_line()
+
     def update_gps_marker(self, lat, lng, heading):
         if self.gps_marker:
             try:
@@ -687,8 +782,31 @@ class MapPlotScreen(Screen):
                 self.gps_marker.lon = float(lng)
                 if heading is not None:
                     self.gps_marker.heading = float(heading)
+                self.update_path_line()
             except Exception as e:
                 print(f"Error updating MapPlotScreen GPS marker: {e}")
+
+    def update_path_line(self):
+        # Remove old line
+        if self.path_line and self.mapview.canvas:
+            self.mapview.canvas.remove(self.path_line)
+            self.path_line = None
+        # Need at least one user marker to draw path
+        if not self.user_markers:
+            return
+        # Gather points: start from GPS marker, then all user markers
+        points = [(self.gps_marker.lat, self.gps_marker.lon)]
+        points += [coords for m, coords in self.user_markers]
+        # Convert lat/lon to mapview widget coords
+        widget_points = []
+        for lat, lon in points:
+            x, y = self.mapview.get_window_xy_from(lat, lon, self.mapview.zoom)
+            widget_points.extend([x, y])
+        # Draw line
+        from kivy.graphics import Color, Line
+        with self.mapview.canvas:
+            Color(0.1, 0.7, 0.2, 1)
+            self.path_line = Line(points=widget_points, width=2)
 
     def go_back(self, instance):
         self.manager.current = 'main'
