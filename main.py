@@ -836,7 +836,7 @@ class MapPlotScreen(Screen):
                 Clock.schedule_once(lambda dt: toast("Mission sent successfully!"))
             except Exception as e:
                 print(f"Mission send error: {e}")
-                Clock.schedule_once(lambda dt: toast(f"Mission send failed: {e}"))
+                Clock.schedule_once(lambda dt: toast(f"Mission send failed"))
         threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
 
     def go_back(self, instance):
