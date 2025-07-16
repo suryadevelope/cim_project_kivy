@@ -44,13 +44,16 @@ from kivymd.uix.card import MDCard
 from gtts import gTTS
 
 import pygame
+from kivy.config import Config
 
+# Set environment variables (optional but helpful)
+os.environ["KIVY_NO_CONSOLELOG"] = "1"
+os.environ["KIVY_NO_MTDEV"] = "1"
+os.environ["KIVY_NO_ARGS"] = "1"
+os.environ["KIVY_MOUSE_MODE"] = "mouse"
 
-os.environ["KIVY_NO_CONSOLELOG"] = "1"  # optional, removes console spam
-os.environ["KIVY_NO_MTDEV"] = "1"       # optional, disables multitouch device detection
-os.environ["KIVY_NO_ARGS"] = "1"        # optional, ignores Kivy default args
-os.environ["KIVY_MOUSE_MODE"] = "mouse" # ✅ Disables multitouch simulation
-
+# THIS is the important one to stop red dots
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 def play_sound(file_path):
     try:
