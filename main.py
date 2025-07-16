@@ -333,6 +333,8 @@ class MainScreen(Screen):
         button_box = BoxLayout(orientation='vertical', size_hint=(0.45, 1), spacing=18, padding=[0, 30, 0, 30])
         start_btn = Button(text='Start', size_hint=(1, None), height=45, font_size='18sp', background_color=(0.1, 0.5, 0.2, 1))
         stop_btn = Button(text='Stop', size_hint=(1, None), height=45, font_size='18sp', background_color=(0.6, 0.1, 0.1, 1))
+        start_btn.bind(on_release=self.send_start_status)
+        stop_btn.bind(on_release=self.send_stop_status)
         button_box.add_widget(start_btn)
         button_box.add_widget(stop_btn)
         bottom_row.add_widget(button_box)
@@ -598,6 +600,33 @@ class MainScreen(Screen):
             self.mapview.lat = lat
             self.mapview.lon = lon
 
+    def send_start_status(self, instance):
+        self.last_status = 'start'
+        self.send_status_udp('start')
+
+    def send_stop_status(self, instance):
+        self.last_status = 'stop'
+        self.send_status_udp('stop')
+
+    def send_status_udp(self, status):
+        import socket
+        from kivy.clock import Clock
+        from kivymd.toast import toast
+        # Send status in the same JSON format as mission: {"mission": [], "status": status}
+        data = json.dumps({"mission": [], "status": status})
+        host = '192.168.1.10'
+        port = 5005
+        def send(data, host, port):
+            try:
+                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                udp_socket.sendto(data.encode('utf-8'), (host, port))
+                udp_socket.close()
+                Clock.schedule_once(lambda dt: toast(f"Sent status: {status}"))
+            except Exception as e:
+                print(f"Status send error: {e}")
+                Clock.schedule_once(lambda dt: toast(f"Failed to send status: {status}"))
+        threading.Thread(target=send, args=(data, host, port), daemon=True).start()
+
 
 # --- Map Plotting Screen ---
 class MapPlotScreen(Screen):
@@ -607,6 +636,7 @@ class MapPlotScreen(Screen):
         self.user_markers = []  # List of (MapMarker, (lat, lon))
         self.path_line = None
         self.last_right_click_pos = None
+        self.last_status = 'stop'  # Default
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         # --- Top controls ---
         controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=50, spacing=10)
@@ -816,12 +846,22 @@ class MapPlotScreen(Screen):
     def write_mission(self, instance):
         # Collect all user marker coordinates and send to remote device
         mission_points = [coords for m, coords in self.user_markers]
+        # Get last status from MainScreen if possible
+        app = App.get_running_app()
+        last_status = 'stop'
+        if hasattr(app, 'root') and app.root is not None:
+            try:
+                main_screen = app.root.get_screen('main')
+                if hasattr(main_screen, 'last_status'):
+                    last_status = main_screen.last_status
+            except Exception:
+                pass
         if not mission_points:
             from kivymd.toast import toast
             from kivy.clock import Clock
             Clock.schedule_once(lambda dt: toast("No mission points to send!"))
             return
-        mission_data = json.dumps({"mission": mission_points})
+        mission_data = json.dumps({"mission": mission_points, "status": last_status})
         # Send mission_data to remote device (simple socket client)
         def send_mission(data, host='192.168.1.10', port=5005):
             import socket
