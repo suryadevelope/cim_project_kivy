@@ -644,14 +644,21 @@ class MapPlotScreen(Screen):
         self.zoom_last_marker_btn = Button(text="Zoom to Last Marker", size_hint=(None, 1), width=180)
         self.clear_mission_btn = Button(text="Clear Mission", size_hint=(None, 1), width=140, background_color=(0.8,0.2,0.2,1))
         self.write_mission_btn = Button(text="Write Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.7,0.2,1))
+        # New: Start/Stop Mission buttons
+        self.start_mission_btn = Button(text="Start Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.5,0.8,1))
+        self.stop_mission_btn = Button(text="Stop Mission", size_hint=(None, 1), width=140, background_color=(0.5,0.2,0.2,1))
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
         self.clear_mission_btn.bind(on_release=self.clear_mission)
         self.write_mission_btn.bind(on_release=self.write_mission)
+        self.start_mission_btn.bind(on_release=self.send_start_mission)
+        self.stop_mission_btn.bind(on_release=self.send_stop_mission)
         controls.add_widget(self.zoom_my_loc_btn)
         controls.add_widget(self.zoom_last_marker_btn)
         controls.add_widget(self.clear_mission_btn)
         controls.add_widget(self.write_mission_btn)
+        controls.add_widget(self.start_mission_btn)
+        controls.add_widget(self.stop_mission_btn)
         controls.add_widget(Label(size_hint_x=1))
         layout.add_widget(controls)
         try:
@@ -725,17 +732,14 @@ class MapPlotScreen(Screen):
         window_y_adjusted = (window_y - marker_height)
         window_x_adjusted = (window_x - 6)
         lat, lon = self.mapview.get_latlon_at(window_x_adjusted, window_y_adjusted)
-        
         marker = MapMarker(lat=lat, lon=lon)
         marker.size = (30, 30)
         marker.bind(on_touch_down=self.on_marker_touch_down)
-        from kivy.clock import Clock
-        def do_add_marker(dt):
-            self.mapview.add_marker(marker)
-            self.user_markers.append((marker, (lat, lon)))
-            popup.dismiss()
-            self.update_path_line()
-        Clock.schedule_once(do_add_marker)
+        # Synchronous addition
+        self.mapview.add_marker(marker)
+        self.user_markers.append((marker, (lat, lon)))
+        popup.dismiss()
+        self.update_path_line()
 
     def on_marker_touch_down(self, marker, touch):
         if 'button' in touch.profile and touch.button == 'right' and marker.collide_point(*touch.pos):
@@ -876,6 +880,31 @@ class MapPlotScreen(Screen):
                 print(f"Mission send error: {e}")
                 Clock.schedule_once(lambda dt: toast(f"Mission send failed"))
         threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
+
+    def send_start_mission(self, instance):
+        self.send_mission_status('start_mission')
+
+    def send_stop_mission(self, instance):
+        self.send_mission_status('stop_mission')
+
+    def send_mission_status(self, status):
+        import socket
+        from kivy.clock import Clock
+        from kivymd.toast import toast
+        mission_points = [coords for m, coords in self.user_markers]
+        data = json.dumps({"mission": mission_points, "status": status})
+        host = '192.168.1.10'
+        port = 5005
+        def send(data, host, port):
+            try:
+                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                udp_socket.sendto(data.encode('utf-8'), (host, port))
+                udp_socket.close()
+                Clock.schedule_once(lambda dt: toast(f"Sent: {status}"))
+            except Exception as e:
+                print(f"Mission status send error: {e}")
+                Clock.schedule_once(lambda dt: toast(f"Failed to send: {status}"))
+        threading.Thread(target=send, args=(data, host, port), daemon=True).start()
 
     def go_back(self, instance):
         self.manager.current = 'main'
