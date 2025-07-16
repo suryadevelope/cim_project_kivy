@@ -254,6 +254,7 @@ class MainScreen(Screen):
         self.updatefullscreenval = False
         self.allvideopopups = []
         self.image_widgets = []
+        self.autonomous_event = None
 
         # --- Top Navigation Bar ---
         top_nav = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, padding=[20, 10, 20, 10], spacing=20)
