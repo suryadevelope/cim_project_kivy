@@ -671,11 +671,11 @@ class MapPlotScreen(Screen):
         popup.open()
 
     def add_marker_at_touch(self, touch, popup):
-        # Convert widget-relative pos to window coordinates
-        widget_x, widget_y = touch.pos
-        window_x, window_y = self.mapview.to_window(widget_x, widget_y, initial=True)
+        import os
+        window_x, window_y = self.mapview.to_window(touch.x, touch.y, initial=True)
         lat, lon = self.mapview.get_latlon_at(window_x, window_y)
-        marker = MapMarker(lat=lat, lon=lon, source='./assets/rover_icon.png')
+        
+        marker = MapMarker(lat=lat, lon=lon)
         marker.size = (30, 30)
         marker.bind(on_touch_down=self.on_marker_touch_down)
         from kivy.clock import Clock
