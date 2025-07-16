@@ -194,73 +194,6 @@ class SplashScreen(Screen):
 
 # Main Screen
 
-# --- Navigation Screen for Autonomous Navigation ---
-
-
-
-class NavigationScreen(Screen):
-
-    def __init__(self, **kwargs):
-        super(NavigationScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        self.path_points = []  # List of (lat, lon) tuples
-        self.sim_index = 0
-        self.sim_gps_data = [  # Simulated GPS path
-            (12.9716, 77.5946),
-            (12.9720, 77.5950),
-            (12.9725, 77.5955),
-            (12.9730, 77.5960),
-            (12.9735, 77.5965),
-            (12.9740, 77.5970),
-            (12.9745, 77.5975),
-            (12.9750, 77.5980)
-        ]
-        try:
-            self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
-            self.marker = MapMarker(lat=12.9716, lon=77.5946)
-            self.mapview.add_marker(self.marker)
-            layout.add_widget(self.mapview)
-            # For path visualization, use MapMarker for each point (polyline not natively supported)
-            self.path_markers = []
-            Clock.schedule_interval(self.update_rover_position, 2)  # Update every 2 seconds
-        except Exception:
-            if WebView:
-                self.webview = WebView(url="https://www.google.com/maps")
-                layout.add_widget(self.webview)
-            else:
-                layout.add_widget(Label(text="WebView not available. Please install kivy_garden.webview."))
-        back_btn = Button(text="Back to Main", size_hint=(1, 0.1), background_color=(0.2,0.5,0.8,1))
-        back_btn.bind(on_release=self.go_back)
-        layout.add_widget(back_btn)
-        self.add_widget(layout)
-
-    def update_rover_position(self, dt):
-        # Simulate receiving a new GPS point
-        if self.sim_index < len(self.sim_gps_data):
-            lat, lon = self.sim_gps_data[self.sim_index]
-            self.sim_index += 1
-        else:
-            lat, lon = self.sim_gps_data[-1]
-        # Update marker position
-        self.marker.lat = lat
-        self.marker.lon = lon
-        # Add to path and show path markers
-        self.path_points.append((lat, lon))
-        # Remove old path markers
-        for m in self.path_markers:
-            self.mapview.remove_marker(m)
-        self.path_markers = []
-        # Add new path markers (as small dots)
-        for pt in self.path_points:
-            m = MapMarker(lat=pt[0], lon=pt[1])
-            m.size = (16, 16)
-            self.mapview.add_marker(m)
-            self.path_markers.append(m)
-        # Do not re-add the main marker; just update its position
-
-    def go_back(self, instance):
-        self.manager.current = 'main'
-
 # Custom MapMarker with rotation support for heading
 from kivy.properties import NumericProperty
 from kivy.graphics.context_instructions import PushMatrix, PopMatrix, Rotate
@@ -767,11 +700,27 @@ class MapPlotScreen(Screen):
 
     def delete_marker(self, marker, popup):
         # Remove marker from map and list
+        found = False
+        try:
+            # Try to remove from mapview if present
+            if hasattr(self.mapview, '_markers') and marker in self.mapview._markers:
+                self.mapview.remove_marker(marker)
+            else:
+                # Fallback: try remove_marker anyway, ignore if not present
+                try:
+                    self.mapview.remove_marker(marker)
+                except Exception as e:
+                    print(f"Error removing marker from map: {e}")
+        except Exception as e:
+            print(f"Error in marker removal logic: {e}")
+        # Remove from user_markers list
         for i, (m, (lat, lon)) in enumerate(self.user_markers):
             if m == marker:
-                self.mapview.remove_marker(marker)
                 del self.user_markers[i]
+                found = True
                 break
+        if not found:
+            print("Warning: Tried to delete a marker not in user_markers list.")
         popup.dismiss()
         self.update_path_line()
 
@@ -818,7 +767,6 @@ class RoverApp(MDApp):
         sm.add_widget(SplashScreen(name='splash'))
         main_screen = MainScreen(name='main')
         sm.add_widget(main_screen)
-        sm.add_widget(NavigationScreen(name='navigation'))
         sm.add_widget(MapPlotScreen(name='mapplot'))
         # sm.current = 'main'
 
