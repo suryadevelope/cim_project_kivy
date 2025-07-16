@@ -671,8 +671,10 @@ class MapPlotScreen(Screen):
         popup.open()
 
     def add_marker_at_touch(self, touch, popup):
-        # Convert screen pos to lat/lon
-        lat, lon = self.mapview.get_latlon_at(*touch.pos)
+        # Convert widget-relative pos to window coordinates
+        widget_x, widget_y = touch.pos
+        window_x, window_y = self.mapview.to_window(widget_x, widget_y, initial=True)
+        lat, lon = self.mapview.get_latlon_at(window_x, window_y)
         marker = MapMarker(lat=lat, lon=lon, source='./assets/rover_icon.png')
         marker.size = (30, 30)
         marker.bind(on_touch_down=self.on_marker_touch_down)
