@@ -46,6 +46,7 @@ from gtts import gTTS
 import pygame
 from kivy.config import Config
 
+
 # Set environment variables (optional but helpful)
 os.environ["KIVY_NO_CONSOLELOG"] = "1"
 os.environ["KIVY_NO_MTDEV"] = "1"
