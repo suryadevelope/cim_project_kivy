@@ -612,10 +612,16 @@ class MapPlotScreen(Screen):
         controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=50, spacing=10)
         self.zoom_my_loc_btn = Button(text="Zoom to My Location", size_hint=(None, 1), width=180)
         self.zoom_last_marker_btn = Button(text="Zoom to Last Marker", size_hint=(None, 1), width=180)
+        self.clear_mission_btn = Button(text="Clear Mission", size_hint=(None, 1), width=140, background_color=(0.8,0.2,0.2,1))
+        self.write_mission_btn = Button(text="Write Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.7,0.2,1))
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
+        self.clear_mission_btn.bind(on_release=self.clear_mission)
+        self.write_mission_btn.bind(on_release=self.write_mission)
         controls.add_widget(self.zoom_my_loc_btn)
         controls.add_widget(self.zoom_last_marker_btn)
+        controls.add_widget(self.clear_mission_btn)
+        controls.add_widget(self.write_mission_btn)
         controls.add_widget(Label(size_hint_x=1))
         layout.add_widget(controls)
         try:
@@ -783,6 +789,48 @@ class MapPlotScreen(Screen):
                 Color(0.1, 0.7, 0.2, 1)
                 self.path_line = Line(points=widget_points, width=2)
         Clock.schedule_once(do_update)
+
+    def clear_mission(self, instance):
+        # Remove all user markers and path line
+        from kivy.clock import Clock
+        def do_clear(dt):
+            for marker, _ in self.user_markers:
+                try:
+                    self.mapview.remove_marker(marker)
+                except Exception as e:
+                    print(f"Warning: Could not remove marker from map: {e}")
+            self.user_markers.clear()
+            if self.path_line and self.mapview.canvas:
+                try:
+                    self.mapview.canvas.remove(self.path_line)
+                except Exception:
+                    pass
+                self.path_line = None
+        Clock.schedule_once(do_clear)
+
+    def write_mission(self, instance):
+        # Collect all user marker coordinates and send to remote device
+        mission_points = [coords for m, coords in self.user_markers]
+        if not mission_points:
+            from kivymd.toast import toast
+            toast("No mission points to send!")
+            return
+        mission_data = json.dumps({"mission": mission_points})
+        # Send mission_data to remote device (simple socket client)
+        def send_mission(data, host='192.168.1.100', port=5005):
+            import socket
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(3)
+                    s.connect((host, port))
+                    s.sendall(data.encode('utf-8'))
+                from kivymd.toast import toast
+                toast("Mission sent successfully!")
+            except Exception as e:
+                print(f"Mission send error: {e}")
+                from kivymd.toast import toast
+                toast(f"Mission send failed: {e}")
+        threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
 
     def go_back(self, instance):
         self.manager.current = 'main'
