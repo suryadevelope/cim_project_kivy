@@ -744,6 +744,11 @@ class MapPlotScreen(Screen):
         Clock.schedule_once(do_delete_marker)
 
     def update_gps_marker(self, lat, lng, heading):
+        import threading
+        from kivy.clock import Clock
+        if threading.current_thread() != threading.main_thread():
+            Clock.schedule_once(lambda dt: self.update_gps_marker(lat, lng, heading))
+            return
         # Only update the existing marker, never add a new one
         if self.gps_marker:
             try:
@@ -813,23 +818,25 @@ class MapPlotScreen(Screen):
         mission_points = [coords for m, coords in self.user_markers]
         if not mission_points:
             from kivymd.toast import toast
-            toast("No mission points to send!")
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda dt: toast("No mission points to send!"))
             return
         mission_data = json.dumps({"mission": mission_points})
         # Send mission_data to remote device (simple socket client)
         def send_mission(data, host='192.168.1.100', port=5005):
             import socket
+            import threading
+            from kivy.clock import Clock
+            from kivymd.toast import toast
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(3)
                     s.connect((host, port))
                     s.sendall(data.encode('utf-8'))
-                from kivymd.toast import toast
-                toast("Mission sent successfully!")
+                Clock.schedule_once(lambda dt: toast("Mission sent successfully!"))
             except Exception as e:
                 print(f"Mission send error: {e}")
-                from kivymd.toast import toast
-                toast(f"Mission send failed: {e}")
+                Clock.schedule_once(lambda dt: toast(f"Mission send failed: {e}"))
         threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
 
     def go_back(self, instance):
