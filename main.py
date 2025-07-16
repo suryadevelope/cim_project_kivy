@@ -823,16 +823,14 @@ class MapPlotScreen(Screen):
             return
         mission_data = json.dumps({"mission": mission_points})
         # Send mission_data to remote device (simple socket client)
-        def send_mission(data, host='192.168.1.100', port=5005):
+        def send_mission(data, host='192.168.1.10', port=5005):
             import socket
-            import threading
             from kivy.clock import Clock
             from kivymd.toast import toast
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(3)
-                    s.connect((host, port))
-                    s.sendall(data.encode('utf-8'))
+                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                udp_socket.sendto(data.encode('utf-8'), (host, port))
+                udp_socket.close()
                 Clock.schedule_once(lambda dt: toast("Mission sent successfully!"))
             except Exception as e:
                 print(f"Mission send error: {e}")
