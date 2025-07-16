@@ -46,6 +46,12 @@ from gtts import gTTS
 import pygame
 
 
+os.environ["KIVY_NO_CONSOLELOG"] = "1"  # optional, removes console spam
+os.environ["KIVY_NO_MTDEV"] = "1"       # optional, disables multitouch device detection
+os.environ["KIVY_NO_ARGS"] = "1"        # optional, ignores Kivy default args
+os.environ["KIVY_MOUSE_MODE"] = "mouse" # ✅ Disables multitouch simulation
+
+
 def play_sound(file_path):
     try:
         pygame.mixer.init()
