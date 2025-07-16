@@ -603,10 +603,50 @@ class MainScreen(Screen):
     def send_start_status(self, instance):
         self.last_status = 'start'
         self.send_status_udp('start')
+        self.start_autonomous_mission_sender()
 
     def send_stop_status(self, instance):
         self.last_status = 'stop'
         self.send_status_udp('stop')
+        self.stop_autonomous_mission_sender()
+
+    def start_autonomous_mission_sender(self):
+        if self.autonomous_event is None:
+            from kivy.clock import Clock
+            self.autonomous_event = Clock.schedule_interval(self.send_autonomous_mission, 1.0)
+
+    def stop_autonomous_mission_sender(self):
+        if self.autonomous_event is not None:
+            from kivy.clock import Clock
+            Clock.unschedule(self.autonomous_event)
+            self.autonomous_event = None
+
+    def send_autonomous_mission(self, dt):
+        # Get mission points from MapPlotScreen
+        app = App.get_running_app()
+        mission_points = []
+        if hasattr(app, 'root') and app.root is not None:
+            try:
+                mapplot_screen = app.root.get_screen('mapplot')
+                if hasattr(mapplot_screen, 'user_markers'):
+                    mission_points = [coords for m, coords in mapplot_screen.user_markers]
+            except Exception:
+                pass
+        status = self.last_status if hasattr(self, 'last_status') else 'stop'
+        data = json.dumps({"mission": mission_points, "status": status})
+        import socket
+        from kivy.clock import Clock
+        from kivymd.toast import toast
+        host = '192.168.1.10'
+        port = 5005
+        def send(data, host, port):
+            try:
+                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                udp_socket.sendto(data.encode('utf-8'), (host, port))
+                udp_socket.close()
+            except Exception as e:
+                print(f"Autonomous mission send error: {e}")
+        threading.Thread(target=send, args=(data, host, port), daemon=True).start()
 
     def send_status_udp(self, status):
         import socket
@@ -644,21 +684,14 @@ class MapPlotScreen(Screen):
         self.zoom_last_marker_btn = Button(text="Zoom to Last Marker", size_hint=(None, 1), width=180)
         self.clear_mission_btn = Button(text="Clear Mission", size_hint=(None, 1), width=140, background_color=(0.8,0.2,0.2,1))
         self.write_mission_btn = Button(text="Write Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.7,0.2,1))
-        # New: Start/Stop Mission buttons
-        self.start_mission_btn = Button(text="Start Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.5,0.8,1))
-        self.stop_mission_btn = Button(text="Stop Mission", size_hint=(None, 1), width=140, background_color=(0.5,0.2,0.2,1))
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
         self.clear_mission_btn.bind(on_release=self.clear_mission)
         self.write_mission_btn.bind(on_release=self.write_mission)
-        self.start_mission_btn.bind(on_release=self.send_start_mission)
-        self.stop_mission_btn.bind(on_release=self.send_stop_mission)
         controls.add_widget(self.zoom_my_loc_btn)
         controls.add_widget(self.zoom_last_marker_btn)
         controls.add_widget(self.clear_mission_btn)
         controls.add_widget(self.write_mission_btn)
-        controls.add_widget(self.start_mission_btn)
-        controls.add_widget(self.stop_mission_btn)
         controls.add_widget(Label(size_hint_x=1))
         layout.add_widget(controls)
         try:
@@ -880,31 +913,6 @@ class MapPlotScreen(Screen):
                 print(f"Mission send error: {e}")
                 Clock.schedule_once(lambda dt: toast(f"Mission send failed"))
         threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
-
-    def send_start_mission(self, instance):
-        self.send_mission_status('start_mission')
-
-    def send_stop_mission(self, instance):
-        self.send_mission_status('stop_mission')
-
-    def send_mission_status(self, status):
-        import socket
-        from kivy.clock import Clock
-        from kivymd.toast import toast
-        mission_points = [coords for m, coords in self.user_markers]
-        data = json.dumps({"mission": mission_points, "status": status})
-        host = '192.168.1.10'
-        port = 5005
-        def send(data, host, port):
-            try:
-                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                udp_socket.sendto(data.encode('utf-8'), (host, port))
-                udp_socket.close()
-                Clock.schedule_once(lambda dt: toast(f"Sent: {status}"))
-            except Exception as e:
-                print(f"Mission status send error: {e}")
-                Clock.schedule_once(lambda dt: toast(f"Failed to send: {status}"))
-        threading.Thread(target=send, args=(data, host, port), daemon=True).start()
 
     def go_back(self, instance):
         self.manager.current = 'main'
