@@ -672,8 +672,11 @@ class MapPlotScreen(Screen):
 
     def add_marker_at_touch(self, touch, popup):
         import os
+        marker_height = 30  # Marker height in pixels (should match marker.size)
         window_x, window_y = self.mapview.to_window(touch.x, touch.y, initial=True)
-        lat, lon = self.mapview.get_latlon_at(window_x, window_y)
+        # Adjust y so the marker's center is at the click point
+        window_y_adjusted = window_y - marker_height / 2
+        lat, lon = self.mapview.get_latlon_at(window_x, window_y_adjusted)
         
         marker = MapMarker(lat=lat, lon=lon)
         marker.size = (30, 30)
