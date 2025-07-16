@@ -700,20 +700,11 @@ class MapPlotScreen(Screen):
 
     def delete_marker(self, marker, popup):
         # Remove marker from map and list
-        found = False
         try:
-            # Try to remove from mapview if present
-            if hasattr(self.mapview, '_markers') and marker in self.mapview._markers:
-                self.mapview.remove_marker(marker)
-            else:
-                # Fallback: try remove_marker anyway, ignore if not present
-                try:
-                    self.mapview.remove_marker(marker)
-                except Exception as e:
-                    print(f"Error removing marker from map: {e}")
+            self.mapview.remove_marker(marker)
         except Exception as e:
-            print(f"Error in marker removal logic: {e}")
-        # Remove from user_markers list
+            print(f"Warning: Could not remove marker from map: {e}")
+        found = False
         for i, (m, (lat, lon)) in enumerate(self.user_markers):
             if m == marker:
                 del self.user_markers[i]
@@ -744,8 +735,12 @@ class MapPlotScreen(Screen):
         if not self.user_markers:
             return
         # Gather points: start from GPS marker, then all user markers
-        points = [(self.gps_marker.lat, self.gps_marker.lon)]
+        points = []
+        if self.gps_marker is not None and hasattr(self.gps_marker, 'lat') and hasattr(self.gps_marker, 'lon'):
+            points.append((self.gps_marker.lat, self.gps_marker.lon))
         points += [coords for m, coords in self.user_markers]
+        if len(points) < 2:
+            return
         # Convert lat/lon to mapview widget coords
         widget_points = []
         for lat, lon in points:
