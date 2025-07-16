@@ -611,8 +611,9 @@ class MapPlotScreen(Screen):
         try:
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             layout.add_widget(self.mapview)
-            # Add GPS marker
+            # Add GPS marker (only once, fixed size)
             self.gps_marker = RotatingMapMarker(lat=12.9716, lon=77.5946, source='./assets/rover_icon.png')
+            self.gps_marker.size = (30, 30)
             self.mapview.add_marker(self.gps_marker)
             # Bind right-click on map
             self.mapview.bind(on_touch_down=self.on_map_touch_down)
@@ -727,12 +728,16 @@ class MapPlotScreen(Screen):
         Clock.schedule_once(do_delete_marker)
 
     def update_gps_marker(self, lat, lng, heading):
+        # Only update the existing marker, never add a new one
         if self.gps_marker:
             try:
                 self.gps_marker.lat = float(lat)
                 self.gps_marker.lon = float(lng)
+                self.gps_marker.size = (30, 30)  # Ensure size is always correct
                 if heading is not None:
                     self.gps_marker.heading = float(heading)
+                # Optionally, recenter map if marker is far from center (optional, comment out if not wanted)
+                # self.mapview.center_on(float(lat), float(lng))
                 self.update_path_line()
             except Exception as e:
                 print(f"Error updating MapPlotScreen GPS marker: {e}")
