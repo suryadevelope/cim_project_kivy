@@ -676,10 +676,13 @@ class MapPlotScreen(Screen):
         marker = MapMarker(lat=lat, lon=lon, source='./assets/rover_icon.png')
         marker.size = (30, 30)
         marker.bind(on_touch_down=self.on_marker_touch_down)
-        self.mapview.add_marker(marker)
-        self.user_markers.append((marker, (lat, lon)))
-        popup.dismiss()
-        self.update_path_line()
+        from kivy.clock import Clock
+        def do_add_marker(dt):
+            self.mapview.add_marker(marker)
+            self.user_markers.append((marker, (lat, lon)))
+            popup.dismiss()
+            self.update_path_line()
+        Clock.schedule_once(do_add_marker)
 
     def on_marker_touch_down(self, marker, touch):
         if 'button' in touch.profile and touch.button == 'right' and marker.collide_point(*touch.pos):
@@ -699,21 +702,23 @@ class MapPlotScreen(Screen):
         popup.open()
 
     def delete_marker(self, marker, popup):
-        # Remove marker from map and list
-        try:
-            self.mapview.remove_marker(marker)
-        except Exception as e:
-            print(f"Warning: Could not remove marker from map: {e}")
-        found = False
-        for i, (m, (lat, lon)) in enumerate(self.user_markers):
-            if m == marker:
-                del self.user_markers[i]
-                found = True
-                break
-        if not found:
-            print("Warning: Tried to delete a marker not in user_markers list.")
-        popup.dismiss()
-        self.update_path_line()
+        from kivy.clock import Clock
+        def do_delete_marker(dt):
+            try:
+                self.mapview.remove_marker(marker)
+            except Exception as e:
+                print(f"Warning: Could not remove marker from map: {e}")
+            found = False
+            for i, (m, (lat, lon)) in enumerate(self.user_markers):
+                if m == marker:
+                    del self.user_markers[i]
+                    found = True
+                    break
+            if not found:
+                print("Warning: Tried to delete a marker not in user_markers list.")
+            popup.dismiss()
+            self.update_path_line()
+        Clock.schedule_once(do_delete_marker)
 
     def update_gps_marker(self, lat, lng, heading):
         if self.gps_marker:
@@ -727,33 +732,36 @@ class MapPlotScreen(Screen):
                 print(f"Error updating MapPlotScreen GPS marker: {e}")
 
     def update_path_line(self):
-        # Remove old line
-        if self.path_line and self.mapview.canvas:
-            try:
-                self.mapview.canvas.remove(self.path_line)
-            except ValueError:
-                pass  # Line was already removed or never added
-            self.path_line = None
-        # Need at least one user marker to draw path
-        if not self.user_markers:
-            return
-        # Gather points: start from GPS marker, then all user markers
-        points = []
-        if self.gps_marker is not None and hasattr(self.gps_marker, 'lat') and hasattr(self.gps_marker, 'lon'):
-            points.append((self.gps_marker.lat, self.gps_marker.lon))
-        points += [coords for m, coords in self.user_markers]
-        if len(points) < 2:
-            return
-        # Convert lat/lon to mapview widget coords
-        widget_points = []
-        for lat, lon in points:
-            x, y = self.mapview.get_window_xy_from(lat, lon, self.mapview.zoom)
-            widget_points.extend([x, y])
-        # Draw line
-        from kivy.graphics import Color, Line
-        with self.mapview.canvas:
-            Color(0.1, 0.7, 0.2, 1)
-            self.path_line = Line(points=widget_points, width=2)
+        from kivy.clock import Clock
+        def do_update(dt):
+            # Remove old line
+            if self.path_line and self.mapview.canvas:
+                try:
+                    self.mapview.canvas.remove(self.path_line)
+                except ValueError:
+                    pass  # Line was already removed or never added
+                self.path_line = None
+            # Need at least one user marker to draw path
+            if not self.user_markers:
+                return
+            # Gather points: start from GPS marker, then all user markers
+            points = []
+            if self.gps_marker is not None and hasattr(self.gps_marker, 'lat') and hasattr(self.gps_marker, 'lon'):
+                points.append((self.gps_marker.lat, self.gps_marker.lon))
+            points += [coords for m, coords in self.user_markers]
+            if len(points) < 2:
+                return
+            # Convert lat/lon to mapview widget coords
+            widget_points = []
+            for lat, lon in points:
+                x, y = self.mapview.get_window_xy_from(lat, lon, self.mapview.zoom)
+                widget_points.extend([x, y])
+            # Draw line
+            from kivy.graphics import Color, Line
+            with self.mapview.canvas:
+                Color(0.1, 0.7, 0.2, 1)
+                self.path_line = Line(points=widget_points, width=2)
+        Clock.schedule_once(do_update)
 
     def go_back(self, instance):
         self.manager.current = 'main'
