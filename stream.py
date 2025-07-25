@@ -248,6 +248,7 @@ class Stream(EventDispatcher):
                     if(compassdata.startswith("#")):
                         # print("PRABHU",compassdata[1:])
                         parts = compassdata[1:].split("=")
+                        print(parts)
                         if(len(parts)==5):
                             self.update_utils={
                                 "armstate":parts[0],
@@ -259,7 +260,7 @@ class Stream(EventDispatcher):
                             
 
                             if(parts[3]!="None"):
-                                # self.compasswidget.update_compass(float(parts[3]))
+                                self.compasswidget.update_compass(float(parts[3]))
                                 self.dataconfirm["compass"] = True
                         else:
                             print("utils data missing ")

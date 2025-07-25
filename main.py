@@ -120,8 +120,8 @@ class CompassWidget(BoxLayout):
         return (center_x - x_offset, center_y - y_offset)
 
     def set_needle_params(self, width, height):
-        needle = self.ids.needle
-        needle.size_hint = (width, height)
+        self.needle = self.ids.needle
+        self.needle.size_hint = (width, height)
     def update_compass(self, angle):
         self.needle.angle = -angle
     def update_angle(self, dt):
@@ -370,6 +370,8 @@ class MainScreen(Screen):
         streaming.bind(update_event=self.update_joystickview)
         streaming.bind(update_utils=self.update_utilsdata_ui)
         streaming.videosections = self.image_widgets
+        streaming.setcompasswidget(self.compass)
+
         self.queue = Queue()
         self.videoreceiver = VideoReceiver()
         self.bind(size=self.on_size)
