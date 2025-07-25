@@ -81,18 +81,20 @@ def maximize_window():
 Builder.load_string('''
 <CompassWidget>:
     size_hint: None, None
-    size: 200, 200  # Default size, will be updated by parent layout
+    size: 230, 230  # Default size, will be updated by parent layout
     canvas.before:
         Rectangle:
-            pos: self.pos
-            size: self.size
+            size: 230, 230  
+            pos: self.pos 
             source: './assets/compass_bg.png'
+           
 
     Image:
         id: needle
         source: './assets/needle.png'
-        size: root.width * 0.3, root.height * 0.3
-        pos: root.center_x - self.width/2, root.center_y - self.height/2
+        size_hint: None, None
+        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+        size: 100, 100
         keep_ratio: True
         allow_stretch: True
         canvas.before:
@@ -929,7 +931,7 @@ class RoverApp(MDApp):
         main_screen = MainScreen(name='main')
         sm.add_widget(main_screen)
         sm.add_widget(MapPlotScreen(name='mapplot'))
-        # sm.current = 'main'
+        sm.current = 'main'
 
         return sm
 
