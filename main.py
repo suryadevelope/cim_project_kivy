@@ -88,22 +88,26 @@ Builder.load_string('''
             pos: self.pos 
             source: './assets/compass_bg.png'
            
-
-    Image:
-        id: needle
-        source: './assets/needle.png'
-        size_hint: None, None
-        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-        size: 100, 100
-        keep_ratio: True
-        allow_stretch: True
-        canvas.before:
-            PushMatrix
-            Rotate:
-                angle: root.needle_angle
-                origin: self.center
-        canvas.after:
-            PopMatrix
+    FloatLayout:
+        size: self.size
+        pos: self.pos
+                    
+        Image:
+            id: needle
+            source: './assets/needle.png'
+            size_hint: None, None
+            pos_hint: {'center_x': 0.68, 'center_y': 0.68}
+            # pos: (self.center_x - 50,self.center_y-50)  # Center the needle
+            size: 100, 100
+            keep_ratio: True
+            allow_stretch: True
+            canvas.before:
+                PushMatrix
+                Rotate:
+                    angle: root.needle_angle
+                    origin: self.center
+            canvas.after:
+                PopMatrix
 ''')
 
 
