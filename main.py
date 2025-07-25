@@ -91,15 +91,14 @@ Builder.load_string('''
     Image:
         id: needle
         source: './assets/needle.png'
-        # size_hint: None, None
         size: root.width * 0.3, root.height * 0.3
-        pos:  self.width / 2, self.height / 2
+        pos: root.center_x - self.width/2, root.center_y - self.height/2
         keep_ratio: True
         allow_stretch: True
         canvas.before:
             PushMatrix
             Rotate:
-                angle: root.needle_angle if hasattr(root, 'needle_angle') else 0
+                angle: root.needle_angle
                 origin: self.center
         canvas.after:
             PopMatrix
@@ -109,6 +108,8 @@ Builder.load_string('''
 from kivy.properties import NumericProperty
 
 class CompassWidget(BoxLayout):
+    needle_angle = NumericProperty(0)
+
     def calculate_rotation_origin(self, angle, center_x, center_y, width, height):
         import math
         half_width = width / 2
@@ -123,7 +124,7 @@ class CompassWidget(BoxLayout):
         self.needle = self.ids.needle
         self.needle.size_hint = (width, height)
     def update_compass(self, angle):
-        self.needle.angle = -angle
+        self.needle_angle = -angle  # Negative if you want north-up
     def update_angle(self, dt):
         angle = random.uniform(0, 360)
         self.update_compass(angle)
