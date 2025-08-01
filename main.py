@@ -289,6 +289,14 @@ class MainScreen(Screen):
         top_nav.add_widget(self.satcount_label)
         top_nav.add_widget(self.irnss_accuracy_label)
         top_nav.add_widget(self.fix_type_label)
+        
+        # Add Autonomous Navigation info labels
+        self.autonomous_mode_label = Label(text="Mode: Manual", size_hint_x=None, width=120, color=(1,1,1,1))
+        self.navigation_status_label = Label(text="Nav: Inactive", size_hint_x=None, width=120, color=(1,1,1,1))
+        self.waypoint_progress_label = Label(text="WP: 0/0", size_hint_x=None, width=100, color=(1,1,1,1))
+        top_nav.add_widget(self.autonomous_mode_label)
+        top_nav.add_widget(self.navigation_status_label)
+        top_nav.add_widget(self.waypoint_progress_label)
         # Map Plotting button
         self.mapplot_btn_top = Button(text="Map Plotting", size_hint_x=None, width=140, height=40, background_color=(0.1, 0.5, 0.2, 1), font_size='16sp')
         self.mapplot_btn_top.bind(on_release=self.goto_mapplot)
@@ -338,14 +346,46 @@ class MainScreen(Screen):
         compass_box.add_widget(self.compass)
         compass_box.add_widget(Widget(size_hint_x=0.1))
         bottom_row.add_widget(compass_box)
-        button_box = BoxLayout(orientation='vertical', size_hint=(0.45, 1), spacing=18, padding=[0, 30, 0, 30])
-        start_btn = Button(text='Start', size_hint=(1, None), height=45, font_size='18sp', background_color=(0.1, 0.5, 0.2, 1))
-        stop_btn = Button(text='Stop', size_hint=(1, None), height=45, font_size='18sp', background_color=(0.6, 0.1, 0.1, 1))
+        
+        # Autonomous Navigation Info Box
+        autonomous_box = BoxLayout(orientation='vertical', size_hint=(0.45, 1), spacing=8, padding=[10, 5, 10, 5])
+        
+        # Autonomous Navigation Title
+        autonomous_title = Label(text='Autonomous Navigation', size_hint=(1, None), height=25, 
+                               color=(0.2, 0.2, 0.2, 1), font_size='14sp', bold=True)
+        autonomous_box.add_widget(autonomous_title)
+        
+        # Mission Status
+        self.mission_status_label = Label(text='Mission: No Mission', size_hint=(1, None), height=20, 
+                                         color=(0.4, 0.4, 0.4, 1), font_size='12sp')
+        autonomous_box.add_widget(self.mission_status_label)
+        
+        # Waypoint Progress
+        self.waypoint_detail_label = Label(text='Waypoints: 0/0', size_hint=(1, None), height=20, 
+                                          color=(0.4, 0.4, 0.4, 1), font_size='12sp')
+        autonomous_box.add_widget(self.waypoint_detail_label)
+        
+        # Distance to Waypoint
+        self.distance_label = Label(text='Distance: N/A', size_hint=(1, None), height=20, 
+                                   color=(0.4, 0.4, 0.4, 1), font_size='12sp')
+        autonomous_box.add_widget(self.distance_label)
+        
+        # Navigation State
+        self.nav_state_label = Label(text='State: Inactive', size_hint=(1, None), height=20, 
+                                    color=(0.4, 0.4, 0.4, 1), font_size='12sp')
+        autonomous_box.add_widget(self.nav_state_label)
+        
+        # Start/Stop Buttons
+        button_box = BoxLayout(orientation='vertical', size_hint=(1, None), height=90, spacing=8)
+        start_btn = Button(text='Start', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.1, 0.5, 0.2, 1))
+        stop_btn = Button(text='Stop', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.6, 0.1, 0.1, 1))
         start_btn.bind(on_release=self.send_start_status)
         stop_btn.bind(on_release=self.send_stop_status)
         button_box.add_widget(start_btn)
         button_box.add_widget(stop_btn)
-        bottom_row.add_widget(button_box)
+        autonomous_box.add_widget(button_box)
+        
+        bottom_row.add_widget(autonomous_box)
         left_panel.add_widget(bottom_row)
         main_layout.add_widget(left_panel)
 
@@ -408,20 +448,40 @@ class MainScreen(Screen):
         else:
             self.img_src_armstate = "./assets/at_home.png"
 
-        # print("Utils data:", value.get("gps"))
-        # print("Utils data:", value)
-
-        gpsvalue = ast.literal_eval(value.get("gps"))
+        # Handle GPS data
+        gpsvalue = value.get("gps")
+        if isinstance(gpsvalue, str):
+            try:
+                gpsvalue = ast.literal_eval(gpsvalue)
+            except:
+                gpsvalue = {}
+        elif not isinstance(gpsvalue, dict):
+            gpsvalue = {}
 
         # GPS info
         self.satcount = str(gpsvalue.get("num_sats", "0"))
         self.irnss_accuracy = str(gpsvalue.get("irnss_stats", "N/A"))
         self.fix_type = str(gpsvalue.get("fix_type", "N/A"))
         self.gps_fix = bool(gpsvalue.get("fix", False))
+        
         # GPS marker update
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
         heading = value.get("compass")
+        
+        # Handle Autonomous Navigation data
+        autonomous_data = value.get("autonomous", {})
+        if isinstance(autonomous_data, str):
+            try:
+                autonomous_data = ast.literal_eval(autonomous_data)
+            except:
+                autonomous_data = {}
+        elif not isinstance(autonomous_data, dict):
+            autonomous_data = {}
+            
+        # Update autonomous navigation display
+        self.update_autonomous_display(autonomous_data)
+        
         # print(f"[DEBUG] mapview type: {type(self.mapview)}")
         # print(f"[DEBUG] lat: {lat}, lng: {lng}")
         from kivy.clock import Clock
@@ -462,6 +522,114 @@ class MainScreen(Screen):
         # Update UI on main thread
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
+    def update_autonomous_display(self, autonomous_data):
+        """Update autonomous navigation display with new data"""
+        try:
+            # Mode display
+            mode = autonomous_data.get("mode", "manual")
+            self.autonomous_mode = mode.capitalize()
+            
+            # Navigation status
+            nav_active = autonomous_data.get("navigation_active", False)
+            nav_paused = autonomous_data.get("navigation_paused", False)
+            nav_state = autonomous_data.get("navigation_state", "Unknown")
+            
+            if nav_active and not nav_paused:
+                nav_status = "Active"
+                nav_color = (0.2, 0.8, 0.2, 1)  # Green
+            elif nav_paused:
+                nav_status = "Paused"
+                nav_color = (0.8, 0.6, 0.2, 1)  # Orange
+            else:
+                nav_status = "Inactive"
+                nav_color = (0.8, 0.2, 0.2, 1)  # Red
+                
+            self.navigation_status = nav_status
+            self.navigation_color = nav_color
+            self.navigation_state = nav_state
+            
+            # Waypoint progress
+            current_wp = autonomous_data.get("current_waypoint_num", 0)
+            total_wp = autonomous_data.get("total_waypoints", 0)
+            completed_wp = autonomous_data.get("completed_waypoints", 0)
+            mission_progress = autonomous_data.get("mission_progress_percent", 0)
+            
+            self.current_waypoint = current_wp
+            self.total_waypoints = total_wp
+            self.completed_waypoints = completed_wp
+            self.mission_progress = mission_progress
+            
+            # Distance and heading to waypoint
+            distance_to_wp = autonomous_data.get("distance_to_waypoint")
+            heading_to_wp = autonomous_data.get("heading_to_waypoint")
+            heading_correction = autonomous_data.get("heading_correction")
+            current_heading = autonomous_data.get("current_heading")
+            
+            self.distance_to_waypoint = distance_to_wp
+            self.heading_to_waypoint = heading_to_wp
+            self.heading_correction = heading_correction
+            self.current_heading = current_heading
+            
+            # Mission status
+            mission_complete = autonomous_data.get("mission_complete", False)
+            has_pending_waypoints = autonomous_data.get("has_pending_waypoints", False)
+            
+            self.mission_complete = mission_complete
+            self.has_pending_waypoints = has_pending_waypoints
+            
+            # Update detailed labels
+            self.update_autonomous_labels()
+            
+        except Exception as e:
+            print(f"Error updating autonomous display: {e}")
+
+    def update_autonomous_labels(self):
+        """Update the detailed autonomous navigation labels"""
+        try:
+            # Mission status
+            if hasattr(self, 'mission_complete') and self.mission_complete:
+                mission_text = "Mission: Complete"
+                mission_color = (0.2, 0.8, 0.2, 1)  # Green
+            elif hasattr(self, 'has_pending_waypoints') and self.has_pending_waypoints:
+                mission_text = "Mission: Active"
+                mission_color = (0.2, 0.6, 0.8, 1)  # Blue
+            else:
+                mission_text = "Mission: No Mission"
+                mission_color = (0.6, 0.6, 0.6, 1)  # Gray
+            
+            if hasattr(self, 'mission_status_label'):
+                self.mission_status_label.text = mission_text
+                self.mission_status_label.color = mission_color
+            
+            # Waypoint progress
+            if hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
+                wp_text = f"Waypoints: {self.completed_waypoints}/{self.total_waypoints}"
+                if hasattr(self, 'waypoint_detail_label'):
+                    self.waypoint_detail_label.text = wp_text
+            
+            # Distance to waypoint
+            if hasattr(self, 'distance_to_waypoint') and self.distance_to_waypoint is not None:
+                try:
+                    distance = float(self.distance_to_waypoint)
+                    distance_text = f"Distance: {distance:.1f}m"
+                except (ValueError, TypeError):
+                    distance_text = "Distance: N/A"
+            else:
+                distance_text = "Distance: N/A"
+            
+            if hasattr(self, 'distance_label'):
+                self.distance_label.text = distance_text
+            
+            # Navigation state
+            if hasattr(self, 'navigation_state'):
+                nav_text = f"State: {self.navigation_state}"
+                if hasattr(self, 'nav_state_label'):
+                    self.nav_state_label.text = nav_text
+                    self.nav_state_label.color = getattr(self, 'navigation_color', (0.4, 0.4, 0.4, 1))
+            
+        except Exception as e:
+            print(f"Error updating autonomous labels: {e}")
+
     def update_ui_on_main_thread(self):
         self.battimg.source = self.img_src
         self.armstateimg.source = self.img_src_armstate
@@ -470,6 +638,18 @@ class MainScreen(Screen):
         self.satcount_label.text = f"Satcount: {self.satcount}"
         self.irnss_accuracy_label.text = f"IRNSS Acc: {self.irnss_accuracy}"
         self.fix_type_label.text = f"Fix: {self.fix_type}"
+        
+        # Update Autonomous Navigation labels
+        if hasattr(self, 'autonomous_mode'):
+            self.autonomous_mode_label.text = f"Mode: {self.autonomous_mode}"
+        
+        if hasattr(self, 'navigation_status'):
+            self.navigation_status_label.text = f"Nav: {self.navigation_status}"
+            self.navigation_status_label.color = getattr(self, 'navigation_color', (1,1,1,1))
+        
+        if hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
+            self.waypoint_progress_label.text = f"WP: {self.completed_waypoints}/{self.total_waypoints}"
+        
         # Enable/disable Map Plotting button and show GPS status
         if self.gps_fix:
             self.mapplot_btn_top.disabled = False

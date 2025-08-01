@@ -6,6 +6,7 @@ import time
 import pygame
 import socket
 import tkinter as tk
+import json
 from kivy.clock import Clock
 from kivy.event import EventDispatcher
 from kivymd.toast import toast
@@ -93,6 +94,12 @@ class Stream(EventDispatcher):
 
     def __init__(self, **kwargs):
         super(Stream, self).__init__(**kwargs)
+        self.compasswidget = None
+        self.thread = Thread(target=self.runjoystick,daemon=True)
+        self.thread.start()
+
+        self.listen_thread = Thread(target=self.listen_udp,daemon=True)
+        self.listen_thread.start()
 
     def updatevideoview(self,view):
         self.update_event = view
@@ -244,26 +251,63 @@ class Stream(EventDispatcher):
                 compassdata = str(data.decode())
 
                 if(compassdata!='None'):
-                    # print(compassdata)
-                    if(compassdata.startswith("#")):
-                        # print("PRABHU",compassdata[1:])
-                        parts = compassdata[1:].split("=")
-                        print(parts)
-                        if(len(parts)==5):
-                            self.update_utils={
-                                "armstate":parts[0],
-                                "batvoltage":parts[1],
-                                "jetsonvoltage":parts[2],
-                                "gps":parts[4],
-                                "compass":parts[3]
-                            }
-                            
-
-                            if(parts[3]!="None"):
-                                self.compasswidget.update_compass(float(parts[3]))
-                                self.dataconfirm["compass"] = True
+                    # Try to parse as JSON first (new format)
+                    try:
+                        json_data = json.loads(compassdata)
+                        print("Received JSON data:", json_data)
+                        
+                        # Handle new JSON data structure
+                        if "utils" in json_data and "compass" in json_data and "gps" in json_data and "autonomous" in json_data:
+                            # Parse utils data (format: "#1=26.66=55.56")
+                            utils_str = json_data["utils"]
+                            if utils_str.startswith("#"):
+                                parts = utils_str[1:].split("=")
+                                if len(parts) >= 3:
+                                    self.update_utils = {
+                                        "armstate": parts[0] if len(parts) > 0 else "0",
+                                        "batvoltage": parts[1] if len(parts) > 1 else "0",
+                                        "jetsonvoltage": parts[2] if len(parts) > 2 else "0",
+                                        "gps": json_data["gps"],
+                                        "compass": json_data["compass"],
+                                        "autonomous": json_data["autonomous"]
+                                    }
+                                    
+                                    # Update compass widget
+                                    if json_data["compass"] != "None" and self.compasswidget is not None:
+                                        try:
+                                            self.compasswidget.update_compass(float(json_data["compass"]))
+                                            self.dataconfirm["compass"] = True
+                                        except (ValueError, TypeError):
+                                            print("Invalid compass value:", json_data["compass"])
+                                    else:
+                                        print("Compass data is None or compass widget not set")
+                                else:
+                                    print("Utils data format incorrect")
+                            else:
+                                print("Utils data doesn't start with #")
                         else:
-                            print("utils data missing ")
+                            print("Missing required fields in JSON data")
+                            
+                    except json.JSONDecodeError:
+                        # Fallback to old format
+                        if(compassdata.startswith("#")):
+                            parts = compassdata[1:].split("=")
+                            print(parts)
+                            if(len(parts)==5):
+                                self.update_utils={
+                                    "armstate":parts[0],
+                                    "batvoltage":parts[1],
+                                    "jetsonvoltage":parts[2],
+                                    "gps":parts[4],
+                                    "compass":parts[3]
+                                }
+                                
+
+                                if(parts[3]!="None" and self.compasswidget is not None):
+                                    self.compasswidget.update_compass(float(parts[3]))
+                                    self.dataconfirm["compass"] = True
+                            else:
+                                print("utils data missing ")
                 # print(f"Received message: {data.decode()} from {addr}")
             except Exception as e:
                 print(f"Error receiving UDP packet: {e}")
@@ -272,13 +316,5 @@ class Stream(EventDispatcher):
         self.compasswidget = compasswidget
         # if(self.compasswidget!=None):
         #     Clock.schedule_interval(self.compasswidget.update_angle, 1)
-
-    def __init__(self):
-        self.compasswidget = None
-        self.thread = Thread(target=self.runjoystick,daemon=True)
-        self.thread.start()
-
-        self.listen_thread = Thread(target=self.listen_udp,daemon=True)
-        self.listen_thread.start()
 
 # root.mainloop()
