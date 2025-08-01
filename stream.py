@@ -258,33 +258,49 @@ class Stream(EventDispatcher):
                         
                         # Handle new JSON data structure
                         if "utils" in json_data and "compass" in json_data and "gps" in json_data and "autonomous" in json_data:
+                            # Initialize update_utils with the new data structure
+                            self.update_utils = {
+                                "gps": json_data["gps"],
+                                "compass": json_data["compass"],
+                                "autonomous": json_data["autonomous"]
+                            }
+                            
                             # Parse utils data (format: "#1=26.66=55.56")
                             utils_str = json_data["utils"]
-                            if utils_str.startswith("#"):
+                            
+                            # Try to parse utils string if it's in the expected format
+                            if utils_str and utils_str.strip() and utils_str.startswith("#"):
                                 parts = utils_str[1:].split("=")
                                 if len(parts) >= 3:
-                                    self.update_utils = {
-                                        "armstate": parts[0] if len(parts) > 0 else "0",
-                                        "batvoltage": parts[1] if len(parts) > 1 else "0",
-                                        "jetsonvoltage": parts[2] if len(parts) > 2 else "0",
-                                        "gps": json_data["gps"],
-                                        "compass": json_data["compass"],
-                                        "autonomous": json_data["autonomous"]
-                                    }
-                                    
-                                    # Update compass widget
-                                    if json_data["compass"] != "None" and self.compasswidget is not None:
-                                        try:
-                                            self.compasswidget.update_compass(float(json_data["compass"]))
-                                            self.dataconfirm["compass"] = True
-                                        except (ValueError, TypeError):
-                                            print("Invalid compass value:", json_data["compass"])
-                                    else:
-                                        print("Compass data is None or compass widget not set")
+                                    self.update_utils.update({
+                                        "armstate": parts[0],
+                                        "batvoltage": parts[1],
+                                        "jetsonvoltage": parts[2]
+                                    })
                                 else:
-                                    print("Utils data format incorrect")
+                                    print("Utils data format incorrect, using default values")
+                                    self.update_utils.update({
+                                        "armstate": "0",
+                                        "batvoltage": "0.0",
+                                        "jetsonvoltage": "0.0"
+                                    })
                             else:
-                                print("Utils data doesn't start with #")
+                                print(f"Utils data not in expected format: '{utils_str}', using default values")
+                                self.update_utils.update({
+                                    "armstate": "0",
+                                    "batvoltage": "0.0",
+                                    "jetsonvoltage": "0.0"
+                                })
+                            
+                            # Update compass widget
+                            if json_data["compass"] != "None" and self.compasswidget is not None:
+                                try:
+                                    self.compasswidget.update_compass(float(json_data["compass"]))
+                                    self.dataconfirm["compass"] = True
+                                except (ValueError, TypeError):
+                                    print("Invalid compass value:", json_data["compass"])
+                            else:
+                                print("Compass data is None or compass widget not set")
                         else:
                             print("Missing required fields in JSON data")
                             
