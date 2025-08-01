@@ -326,7 +326,8 @@ class Stream(EventDispatcher):
                                 print("utils data missing ")
                 # print(f"Received message: {data.decode()} from {addr}")
             except Exception as e:
-                print(f"Error receiving UDP packet: {e}")
+                pass
+                # print(f"Error receiving UDP packet: {e}")
 
     def setcompasswidget(self,compasswidget=None):
         self.compasswidget = compasswidget

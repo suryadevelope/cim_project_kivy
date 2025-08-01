@@ -434,18 +434,40 @@ class MainScreen(Screen):
                 self.dismiss_full_screen(self.popup)
 
     def update_utilsdata_ui(self, instance, value):
+        print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
+        
         # Battery and arm state logic
-        if int(float(value.get("batvoltage", 0))) <= 25:
+        batvoltage = value.get("batvoltage", 0)
+        jetsonvoltage = value.get("jetsonvoltage", 0)
+        armstate = value.get("armstate", 0)
+        
+        print(f"[DEBUG] batvoltage: {batvoltage}, jetsonvoltage: {jetsonvoltage}, armstate: {armstate}")
+        
+        try:
+            if float(batvoltage) <= 25:
+                self.img_src = './assets/bad_batt.png'
+            else:
+                self.img_src = './assets/good_batt.png'
+        except (ValueError, TypeError) as e:
+            print(f"[DEBUG] Error processing batvoltage: {e}")
             self.img_src = './assets/bad_batt.png'
-        else:
-            self.img_src = './assets/good_batt.png'
-        if int(float(value.get("jetsonvoltage", 0))) <= 11.5:
+            
+        try:
+            if float(jetsonvoltage) <= 11.5:
+                self.jetsonimg_src = './assets/bad_batt.png'
+            else:
+                self.jetsonimg_src = './assets/good_batt.png'
+        except (ValueError, TypeError) as e:
+            print(f"[DEBUG] Error processing jetsonvoltage: {e}")
             self.jetsonimg_src = './assets/bad_batt.png'
-        else:
-            self.jetsonimg_src = './assets/good_batt.png'
-        if int(value.get("armstate", 0)) == 1:
-            self.img_src_armstate = "./assets/no_home.png"
-        else:
+            
+        try:
+            if int(armstate) == 1:
+                self.img_src_armstate = "./assets/no_home.png"
+            else:
+                self.img_src_armstate = "./assets/at_home.png"
+        except (ValueError, TypeError) as e:
+            print(f"[DEBUG] Error processing armstate: {e}")
             self.img_src_armstate = "./assets/at_home.png"
 
         # Handle GPS data
