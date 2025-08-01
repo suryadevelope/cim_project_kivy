@@ -438,6 +438,14 @@ class MainScreen(Screen):
     def update_utilsdata_ui(self, instance, value):
         print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
         
+        # Parse JSON string if value is a string
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                print(f"[DEBUG] Failed to parse JSON: {value}")
+                return
+        
         # Battery and arm state logic
         batvoltage = value.get("batvoltage", 0)
         jetsonvoltage = value.get("jetsonvoltage", 0)
@@ -488,6 +496,11 @@ class MainScreen(Screen):
         self.fix_type = str(gpsvalue.get("fix_type", "N/A"))
         self.gps_fix = bool(gpsvalue.get("fix", False))
         
+        print(f"[DEBUG] Set satcount to: {self.satcount}")
+        print(f"[DEBUG] Set irnss_accuracy to: {self.irnss_accuracy}")
+        print(f"[DEBUG] Set fix_type to: {self.fix_type}")
+        print(f"[DEBUG] Set gps_fix to: {self.gps_fix}")
+        
         # GPS marker update
         lat = gpsvalue.get("lat")
         lng = gpsvalue.get("lng")
@@ -502,6 +515,8 @@ class MainScreen(Screen):
                 autonomous_data = {}
         elif not isinstance(autonomous_data, dict):
             autonomous_data = {}
+            
+        print(f"[DEBUG] Autonomous data received: {autonomous_data}")
             
         # Update autonomous navigation display
         self.update_autonomous_display(autonomous_data)
@@ -655,6 +670,14 @@ class MainScreen(Screen):
             print(f"Error updating autonomous labels: {e}")
 
     def update_ui_on_main_thread(self):
+        print(f"[DEBUG] update_ui_on_main_thread called")
+        print(f"[DEBUG] img_src: {self.img_src}")
+        print(f"[DEBUG] jetsonimg_src: {self.jetsonimg_src}")
+        print(f"[DEBUG] img_src_armstate: {self.img_src_armstate}")
+        print(f"[DEBUG] satcount: {self.satcount}")
+        print(f"[DEBUG] irnss_accuracy: {self.irnss_accuracy}")
+        print(f"[DEBUG] fix_type: {self.fix_type}")
+        
         self.battimg.source = self.img_src
         self.armstateimg.source = self.img_src_armstate
         self.jetsonbattimg.source = self.jetsonimg_src

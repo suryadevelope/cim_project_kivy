@@ -12,7 +12,7 @@ from kivy.event import EventDispatcher
 from kivymd.toast import toast
 
 
-from kivy.properties import NumericProperty,ObjectProperty
+from kivy.properties import NumericProperty, ObjectProperty, StringProperty
 
 # root = tk.Tk()
 
@@ -83,7 +83,7 @@ signal.signal(signal.SIGTERM, signal_handler) # Handles termination signal
 
 class Stream(EventDispatcher):
     update_event = NumericProperty(0)
-    update_utils= ObjectProperty({})
+    update_utils = StringProperty("{}")
 
     dataconfirm={
         "compass":False,
@@ -267,36 +267,45 @@ class Stream(EventDispatcher):
                             
                             # Parse utils data (format: "#1=26.66=55.56")
                             utils_str = json_data["utils"]
+                            utils_data = {}
                             
                             # Try to parse utils string if it's in the expected format
                             if utils_str and utils_str.strip() and utils_str.startswith("#"):
                                 parts = utils_str[1:].split("=")
                                 if len(parts) >= 3:
-                                    self.update_utils.update({
+                                    utils_data = {
                                         "armstate": parts[0],
                                         "batvoltage": parts[1],
                                         "jetsonvoltage": parts[2]
-                                    })
+                                    }
                                 else:
                                     print("Utils data format incorrect, using default values")
-                                    self.update_utils.update({
+                                    utils_data = {
                                         "armstate": "0",
                                         "batvoltage": "0.0",
                                         "jetsonvoltage": "0.0"
-                                    })
+                                    }
                             else:
                                 print(f"Utils data not in expected format: '{utils_str}', using default values")
+                                utils_data = {
+                                    "armstate": "0",
+                                    "batvoltage": "0.0",
+                                    "jetsonvoltage": "0.0"
+                                }
                             
                             # Create complete update_utils dictionary and reassign to trigger property change
-                            self.update_utils = {
+                            complete_data = {
                                 "gps": json_data["gps"],
                                 "compass": json_data["compass"],
                                 "autonomous": json_data["autonomous"],
                                 **utils_data  # Include the parsed utils data
                             }
                             
-                            print(f"[DEBUG] Created update_utils with keys: {list(self.update_utils.keys())}")
-                            print(f"[DEBUG] Autonomous data: {self.update_utils.get('autonomous', 'Not found')}")
+                            print(f"[DEBUG] Created update_utils with keys: {list(complete_data.keys())}")
+                            print(f"[DEBUG] Autonomous data: {complete_data.get('autonomous', 'Not found')}")
+                            
+                            # Force property update by serializing as JSON
+                            self.update_utils = json.dumps(complete_data)
                             
                             # Update compass widget
                             if json_data["compass"] != "None" and self.compasswidget is not None:
@@ -318,13 +327,14 @@ class Stream(EventDispatcher):
                             parts = compassdata[1:].split("=")
                             print(parts)
                             if(len(parts)==5):
-                                self.update_utils={
+                                old_data = {
                                     "armstate":parts[0],
                                     "batvoltage":parts[1],
                                     "jetsonvoltage":parts[2],
                                     "gps":parts[4],
                                     "compass":parts[3]
                                 }
+                                self.update_utils = json.dumps(old_data)
                                 
 
                                 if(parts[3]!="None" and self.compasswidget is not None):
