@@ -96,8 +96,7 @@ Builder.load_string('''
             id: needle
             source: './assets/needle.png'
             size_hint: None, None
-            pos_hint: {'center_x': 0.68, 'center_y': 0.68}
-            # pos: (self.center_x - 50,self.center_y-50)  # Center the needle
+            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
             size: 100, 100
             keep_ratio: True
             allow_stretch: True
@@ -108,6 +107,16 @@ Builder.load_string('''
                     origin: self.center
             canvas.after:
                 PopMatrix
+                
+    # Add a test label to show the current angle
+    Label:
+        id: angle_label
+        text: str(root.needle_angle)
+        size_hint: None, None
+        size: 100, 30
+        pos_hint: {'center_x': 0.5, 'center_y': 0.1}
+        color: 1, 1, 1, 1
+        font_size: '16sp'
 ''')
 
 
@@ -131,8 +140,23 @@ class CompassWidget(BoxLayout):
         self.needle.size_hint = (width, height)
     def update_compass(self, angle):
         print(f"[DEBUG] CompassWidget.update_compass called with angle: {angle}")
-        self.needle_angle = -angle  # Negative if you want north-up
-        print(f"[DEBUG] CompassWidget.needle_angle set to: {self.needle_angle}")
+        try:
+            # Ensure angle is a valid number
+            if angle is not None and not isinstance(angle, str):
+                self.needle_angle = -float(angle)  # Negative if you want north-up
+                print(f"[DEBUG] CompassWidget.needle_angle set to: {self.needle_angle}")
+                
+                # Update the angle label if it exists
+                if hasattr(self, 'ids') and 'angle_label' in self.ids:
+                    self.ids.angle_label.text = f"{self.needle_angle:.1f}°"
+                
+                # Force a redraw if canvas exists
+                if hasattr(self, 'canvas') and self.canvas is not None:
+                    self.canvas.ask_update()
+            else:
+                print(f"[DEBUG] Invalid angle value: {angle}")
+        except (ValueError, TypeError) as e:
+            print(f"[DEBUG] Error converting angle {angle}: {e}")
     def update_angle(self, dt):
         angle = random.uniform(0, 360)
         self.update_compass(angle)
@@ -344,6 +368,7 @@ class MainScreen(Screen):
         self.compass = CompassWidget()
         self.compass.size_hint = (None, None)
         self.compass.size = (170, 170)
+        print(f"[DEBUG] Compass widget created with size: {self.compass.size}")
         compass_box.add_widget(Widget(size_hint_x=0.1))
         compass_box.add_widget(self.compass)
         compass_box.add_widget(Widget(size_hint_x=0.1))
@@ -381,10 +406,13 @@ class MainScreen(Screen):
         button_box = BoxLayout(orientation='vertical', size_hint=(1, None), height=90, spacing=8)
         start_btn = Button(text='Start', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.1, 0.5, 0.2, 1))
         stop_btn = Button(text='Stop', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.6, 0.1, 0.1, 1))
+        test_compass_btn = Button(text='Test Compass', size_hint=(1, None), height=30, font_size='12sp', background_color=(0.2, 0.2, 0.8, 1))
         start_btn.bind(on_release=self.send_start_status)
         stop_btn.bind(on_release=self.send_stop_status)
+        test_compass_btn.bind(on_release=self.test_compass_update)
         button_box.add_widget(start_btn)
         button_box.add_widget(stop_btn)
+        button_box.add_widget(test_compass_btn)
         autonomous_box.add_widget(button_box)
         
         bottom_row.add_widget(autonomous_box)
@@ -420,6 +448,7 @@ class MainScreen(Screen):
         streaming.bind(update_utils=self.update_utilsdata_ui)
         streaming.videosections = self.image_widgets
         streaming.setcompasswidget(self.compass)
+        print(f"[DEBUG] Stream bindings set up successfully")
 
         self.queue = Queue()
         self.videoreceiver = VideoReceiver()
@@ -437,6 +466,8 @@ class MainScreen(Screen):
 
     def update_utilsdata_ui(self, instance, value):
         print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
+        print(f"[DEBUG] update_utilsdata_ui instance: {instance}")
+        print(f"[DEBUG] update_utilsdata_ui value type: {type(value)}")
         
         # Battery and arm state logic
         batvoltage = value.get("batvoltage", 0)
@@ -544,6 +575,7 @@ class MainScreen(Screen):
             if mapplot_screen and hasattr(mapplot_screen, 'gps_marker') and app.root.current == 'mapplot':
                 mapplot_screen.update_gps_marker(lat, lng, heading)
         # Update UI on main thread
+        print(f"[DEBUG] Scheduling UI update on main thread")
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
     def update_autonomous_display(self, autonomous_data):
@@ -668,32 +700,49 @@ class MainScreen(Screen):
             print(f"Error updating autonomous labels: {e}")
 
     def update_ui_on_main_thread(self):
-        self.battimg.source = self.img_src
-        self.armstateimg.source = self.img_src_armstate
-        self.jetsonbattimg.source = self.jetsonimg_src
-        # Update GPS info labels
-        self.satcount_label.text = f"Satcount: {self.satcount}"
-        self.irnss_accuracy_label.text = f"IRNSS Acc: {self.irnss_accuracy}"
-        self.fix_type_label.text = f"Fix: {self.fix_type}"
-        
-        # Update Autonomous Navigation labels
-        if hasattr(self, 'autonomous_mode'):
-            self.autonomous_mode_label.text = f"Mode: {self.autonomous_mode}"
-        
-        if hasattr(self, 'navigation_status'):
-            self.navigation_status_label.text = f"Nav: {self.navigation_status}"
-            self.navigation_status_label.color = getattr(self, 'navigation_color', (1,1,1,1))
-        
-        if hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
-            self.waypoint_progress_label.text = f"WP: {self.completed_waypoints}/{self.total_waypoints}"
-        
-        # Enable/disable Map Plotting button and show GPS status
-        if self.gps_fix:
-            self.mapplot_btn_top.disabled = False
-            self.gps_status_label.text = ""
-        else:
-            self.mapplot_btn_top.disabled = True
-            self.gps_status_label.text = "Waiting for GPS 3D fix..."
+        print(f"[DEBUG] update_ui_on_main_thread called")
+        try:
+            # Update battery and arm state images
+            if hasattr(self, 'battimg') and hasattr(self, 'img_src'):
+                self.battimg.source = self.img_src
+            if hasattr(self, 'armstateimg') and hasattr(self, 'img_src_armstate'):
+                self.armstateimg.source = self.img_src_armstate
+            if hasattr(self, 'jetsonbattimg') and hasattr(self, 'jetsonimg_src'):
+                self.jetsonbattimg.source = self.jetsonimg_src
+            
+            # Update GPS info labels
+            if hasattr(self, 'satcount_label') and hasattr(self, 'satcount'):
+                self.satcount_label.text = f"Satcount: {self.satcount}"
+            if hasattr(self, 'irnss_accuracy_label') and hasattr(self, 'irnss_accuracy'):
+                self.irnss_accuracy_label.text = f"IRNSS Acc: {self.irnss_accuracy}"
+            if hasattr(self, 'fix_type_label') and hasattr(self, 'fix_type'):
+                self.fix_type_label.text = f"Fix: {self.fix_type}"
+            
+            # Update Autonomous Navigation labels
+            if hasattr(self, 'autonomous_mode_label') and hasattr(self, 'autonomous_mode'):
+                self.autonomous_mode_label.text = f"Mode: {self.autonomous_mode}"
+            
+            if hasattr(self, 'navigation_status_label') and hasattr(self, 'navigation_status'):
+                self.navigation_status_label.text = f"Nav: {self.navigation_status}"
+                if hasattr(self, 'navigation_color'):
+                    self.navigation_status_label.color = self.navigation_color
+            
+            if hasattr(self, 'waypoint_progress_label') and hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
+                self.waypoint_progress_label.text = f"WP: {self.completed_waypoints}/{self.total_waypoints}"
+            
+            # Enable/disable Map Plotting button and show GPS status
+            if hasattr(self, 'mapplot_btn_top') and hasattr(self, 'gps_status_label'):
+                if self.gps_fix:
+                    self.mapplot_btn_top.disabled = False
+                    self.gps_status_label.text = ""
+                else:
+                    self.mapplot_btn_top.disabled = True
+                    self.gps_status_label.text = "Waiting for GPS 3D fix..."
+                    
+        except Exception as e:
+            print(f"Error in update_ui_on_main_thread: {e}")
+            import traceback
+            traceback.print_exc()
 
     def update_joystickview(self, instance, value):
         if self.autoshowfullscreen:
@@ -874,6 +923,16 @@ class MainScreen(Screen):
             except Exception as e:
                 print(f"Autonomous mission send error: {e}")
         threading.Thread(target=send, args=(data, host, port), daemon=True).start()
+
+    def test_compass_update(self, instance):
+        """Test compass update with a random angle"""
+        import random
+        test_angle = random.uniform(0, 360)
+        print(f"[DEBUG] Testing compass update with angle: {test_angle}")
+        if hasattr(self, 'compass'):
+            self.compass.update_compass(test_angle)
+            from kivymd.toast import toast
+            toast(f"Compass updated to {test_angle:.1f}°")
 
     def send_status_udp(self, status):
         import socket

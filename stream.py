@@ -83,7 +83,7 @@ signal.signal(signal.SIGTERM, signal_handler) # Handles termination signal
 
 class Stream(EventDispatcher):
     update_event = NumericProperty(0)
-    update_utils= ObjectProperty({})
+    update_utils = ObjectProperty({})
 
     dataconfirm={
         "compass":False,
@@ -286,12 +286,17 @@ class Stream(EventDispatcher):
                                 print(f"Utils data not in expected format: '{utils_str}', using default values")
                             
                             # Create complete update_utils dictionary and reassign to trigger property change
-                            self.update_utils = {
+                            new_update_utils = {
                                 "gps": json_data["gps"],
                                 "compass": json_data["compass"],
                                 "autonomous": json_data["autonomous"],
                                 **utils_data  # Include the parsed utils data
                             }
+                            
+                            # Trigger property change notification
+                            print(f"[DEBUG] Setting update_utils property with {len(new_update_utils)} keys")
+                            self.update_utils = new_update_utils
+                            print(f"[DEBUG] update_utils property set successfully")
                             
                             print(f"[DEBUG] Created update_utils with keys: {list(self.update_utils.keys())}")
                             print(f"[DEBUG] Autonomous data: {self.update_utils.get('autonomous', 'Not found')}")
@@ -301,7 +306,12 @@ class Stream(EventDispatcher):
                                 try:
                                     compass_value = float(json_data["compass"])
                                     print(f"[DEBUG] Updating compass with value: {compass_value}")
-                                    self.compasswidget.update_compass(compass_value)
+                                    # Schedule compass update on main thread
+                                    from kivy.clock import Clock
+                                    def update_compass_on_main(dt):
+                                        if self.compasswidget is not None:
+                                            self.compasswidget.update_compass(compass_value)
+                                    Clock.schedule_once(update_compass_on_main)
                                     self.dataconfirm["compass"] = True
                                 except (ValueError, TypeError) as e:
                                     print(f"Invalid compass value: {json_data['compass']}, error: {e}")
@@ -326,8 +336,17 @@ class Stream(EventDispatcher):
                                 
 
                                 if(parts[3]!="None" and self.compasswidget is not None):
-                                    self.compasswidget.update_compass(float(parts[3]))
-                                    self.dataconfirm["compass"] = True
+                                    try:
+                                        compass_value = float(parts[3])
+                                        # Schedule compass update on main thread
+                                        from kivy.clock import Clock
+                                        def update_compass_on_main(dt):
+                                            if self.compasswidget is not None:
+                                                self.compasswidget.update_compass(compass_value)
+                                        Clock.schedule_once(update_compass_on_main)
+                                        self.dataconfirm["compass"] = True
+                                    except (ValueError, TypeError) as e:
+                                        print(f"Invalid compass value in old format: {parts[3]}, error: {e}")
                             else:
                                 print("utils data missing ")
                 # print(f"Received message: {data.decode()} from {addr}")
