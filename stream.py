@@ -258,8 +258,6 @@ class Stream(EventDispatcher):
                         
                         # Handle new JSON data structure
                         if "utils" in json_data and "compass" in json_data and "gps" in json_data and "autonomous" in json_data:
-                            print(f"[DEBUG] Processing JSON data with all required fields")
-                            
                             # Parse utils data (format: "#1=26.66=55.56")
                             utils_str = json_data["utils"]
                             
@@ -279,7 +277,6 @@ class Stream(EventDispatcher):
                                         "batvoltage": parts[1],
                                         "jetsonvoltage": parts[2]
                                     })
-                                    print(f"[DEBUG] Parsed utils data: {utils_data}")
                                 else:
                                     print("Utils data format incorrect, using default values")
                             else:
@@ -293,30 +290,15 @@ class Stream(EventDispatcher):
                                 **utils_data  # Include the parsed utils data
                             }
                             
-                            # Trigger property change notification
-                            print(f"[DEBUG] Setting update_utils property with {len(new_update_utils)} keys")
-                            self.update_utils = new_update_utils
-                            print(f"[DEBUG] update_utils property set successfully")
-                            
-                            print(f"[DEBUG] Created update_utils with keys: {list(self.update_utils.keys())}")
-                            print(f"[DEBUG] Autonomous data: {self.update_utils.get('autonomous', 'Not found')}")
-                            
                             # Update compass widget
                             if json_data["compass"] != "None" and self.compasswidget is not None:
                                 try:
-                                    compass_value = float(json_data["compass"])
-                                    print(f"[DEBUG] Updating compass with value: {compass_value}")
-                                    # Schedule compass update on main thread
-                                    from kivy.clock import Clock
-                                    def update_compass_on_main(dt):
-                                        if self.compasswidget is not None:
-                                            self.compasswidget.update_compass(compass_value)
-                                    Clock.schedule_once(update_compass_on_main)
+                                    self.compasswidget.update_compass(float(json_data["compass"]))
                                     self.dataconfirm["compass"] = True
-                                except (ValueError, TypeError) as e:
-                                    print(f"Invalid compass value: {json_data['compass']}, error: {e}")
+                                except (ValueError, TypeError):
+                                    print("Invalid compass value:", json_data["compass"])
                             else:
-                                print(f"Compass data is None or compass widget not set. Compass value: {json_data.get('compass', 'Not found')}")
+                                print("Compass data is None or compass widget not set")
                         else:
                             print("Missing required fields in JSON data")
                             
@@ -356,7 +338,6 @@ class Stream(EventDispatcher):
 
     def setcompasswidget(self,compasswidget=None):
         self.compasswidget = compasswidget
-        print(f"[DEBUG] Compass widget set: {self.compasswidget is not None}")
         # if(self.compasswidget!=None):
         #     Clock.schedule_interval(self.compasswidget.update_angle, 1)
 
