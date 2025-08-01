@@ -130,7 +130,9 @@ class CompassWidget(BoxLayout):
         self.needle = self.ids.needle
         self.needle.size_hint = (width, height)
     def update_compass(self, angle):
+        print(f"[DEBUG] CompassWidget.update_compass called with angle: {angle}")
         self.needle_angle = -angle  # Negative if you want north-up
+        print(f"[DEBUG] CompassWidget.needle_angle set to: {self.needle_angle}")
     def update_angle(self, dt):
         angle = random.uniform(0, 360)
         self.update_compass(angle)
@@ -547,14 +549,19 @@ class MainScreen(Screen):
     def update_autonomous_display(self, autonomous_data):
         """Update autonomous navigation display with new data"""
         try:
+            print(f"[DEBUG] Updating autonomous display with data: {autonomous_data}")
+            
             # Mode display
             mode = autonomous_data.get("mode", "manual")
             self.autonomous_mode = mode.capitalize()
+            print(f"[DEBUG] Autonomous mode: {self.autonomous_mode}")
             
             # Navigation status
             nav_active = autonomous_data.get("navigation_active", False)
             nav_paused = autonomous_data.get("navigation_paused", False)
             nav_state = autonomous_data.get("navigation_state", "Unknown")
+            
+            print(f"[DEBUG] Navigation - Active: {nav_active}, Paused: {nav_paused}, State: {nav_state}")
             
             if nav_active and not nav_paused:
                 nav_status = "Active"
@@ -581,6 +588,8 @@ class MainScreen(Screen):
             self.completed_waypoints = completed_wp
             self.mission_progress = mission_progress
             
+            print(f"[DEBUG] Waypoints - Current: {current_wp}, Total: {total_wp}, Completed: {completed_wp}, Progress: {mission_progress}%")
+            
             # Distance and heading to waypoint
             distance_to_wp = autonomous_data.get("distance_to_waypoint")
             heading_to_wp = autonomous_data.get("heading_to_waypoint")
@@ -592,6 +601,8 @@ class MainScreen(Screen):
             self.heading_correction = heading_correction
             self.current_heading = current_heading
             
+            print(f"[DEBUG] Distance: {distance_to_wp}, Heading to WP: {heading_to_wp}, Current Heading: {current_heading}")
+            
             # Mission status
             mission_complete = autonomous_data.get("mission_complete", False)
             has_pending_waypoints = autonomous_data.get("has_pending_waypoints", False)
@@ -599,11 +610,15 @@ class MainScreen(Screen):
             self.mission_complete = mission_complete
             self.has_pending_waypoints = has_pending_waypoints
             
+            print(f"[DEBUG] Mission - Complete: {mission_complete}, Has Pending: {has_pending_waypoints}")
+            
             # Update detailed labels
             self.update_autonomous_labels()
             
         except Exception as e:
             print(f"Error updating autonomous display: {e}")
+            import traceback
+            traceback.print_exc()
 
     def update_autonomous_labels(self):
         """Update the detailed autonomous navigation labels"""
