@@ -258,26 +258,23 @@ class Stream(EventDispatcher):
                         
                         # Handle new JSON data structure
                         if "utils" in json_data and "compass" in json_data and "gps" in json_data and "autonomous" in json_data:
-                            # Initialize update_utils with the new data structure
-                            self.update_utils = {
-                                "gps": json_data["gps"],
-                                "compass": json_data["compass"],
-                                "autonomous": json_data["autonomous"]
-                            }
-                            
                             # Parse utils data (format: "#1=26.66=55.56")
                             utils_str = json_data["utils"]
                             utils_data = {}
                             
+                            print(f"[DEBUG] Parsing utils string: '{utils_str}'")
+                            
                             # Try to parse utils string if it's in the expected format
                             if utils_str and utils_str.strip() and utils_str.startswith("#"):
                                 parts = utils_str[1:].split("=")
+                                print(f"[DEBUG] Split parts: {parts}")
                                 if len(parts) >= 3:
                                     utils_data = {
                                         "armstate": parts[0],
                                         "batvoltage": parts[1],
                                         "jetsonvoltage": parts[2]
                                     }
+                                    print(f"[DEBUG] Parsed utils data: {utils_data}")
                                 else:
                                     print("Utils data format incorrect, using default values")
                                     utils_data = {
@@ -302,10 +299,18 @@ class Stream(EventDispatcher):
                             }
                             
                             print(f"[DEBUG] Created update_utils with keys: {list(complete_data.keys())}")
+                            print(f"[DEBUG] Utils data in complete_data: {complete_data.get('armstate', 'Not found')}, {complete_data.get('batvoltage', 'Not found')}, {complete_data.get('jetsonvoltage', 'Not found')}")
                             print(f"[DEBUG] Autonomous data: {complete_data.get('autonomous', 'Not found')}")
+                            print(f"[DEBUG] Complete data structure: {complete_data}")
                             
-                            # Force property update by serializing as JSON
-                            self.update_utils = json.dumps(complete_data)
+                            # Force property update by serializing as JSON with timestamp to ensure uniqueness
+                            import time
+                            complete_data_with_timestamp = complete_data.copy()
+                            complete_data_with_timestamp['_timestamp'] = time.time()
+                            self.update_utils = json.dumps(complete_data_with_timestamp)
+                            
+                            # Also trigger the update_event to force UI refresh
+                            self.update_event += 1
                             
                             # Update compass widget
                             if json_data["compass"] != "None" and self.compasswidget is not None:

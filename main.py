@@ -437,11 +437,17 @@ class MainScreen(Screen):
 
     def update_utilsdata_ui(self, instance, value):
         print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
+        print(f"[DEBUG] Value type: {type(value)}")
         
         # Parse JSON string if value is a string
         if isinstance(value, str):
             try:
                 value = json.loads(value)
+                print(f"[DEBUG] Successfully parsed JSON string")
+                # Remove timestamp if present
+                if '_timestamp' in value:
+                    del value['_timestamp']
+                    print(f"[DEBUG] Removed timestamp from data")
             except json.JSONDecodeError:
                 print(f"[DEBUG] Failed to parse JSON: {value}")
                 return
@@ -451,7 +457,10 @@ class MainScreen(Screen):
         jetsonvoltage = value.get("jetsonvoltage", 0)
         armstate = value.get("armstate", 0)
         
-        print(f"[DEBUG] batvoltage: {batvoltage}, jetsonvoltage: {jetsonvoltage}, armstate: {armstate}")
+        print(f"[DEBUG] batvoltage: {batvoltage} (type: {type(batvoltage)})")
+        print(f"[DEBUG] jetsonvoltage: {jetsonvoltage} (type: {type(jetsonvoltage)})")
+        print(f"[DEBUG] armstate: {armstate} (type: {type(armstate)})")
+        print(f"[DEBUG] All keys in value: {list(value.keys())}")
         
         try:
             if float(batvoltage) <= 25:
