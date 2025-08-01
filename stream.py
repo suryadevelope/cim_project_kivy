@@ -27,12 +27,13 @@ print("main.py started")
 
 def is_port_in_use(port):
     try:
-        # Use Windows-compatible netstat command
-        output = subprocess.check_output(["netstat", "-an"], shell=True)
+        output = subprocess.check_output(["netstat", "-tuln"])
         lines = output.decode("utf-8").split("\n")
         for line in lines:
-            if f":{port}" in line and "LISTENING" in line:
-                return True  # Port is in use
+            parts = line.split()
+            if len(parts) >= 4:
+                if parts[3] == f"0.0.0.0:{port}":
+                    return True  # Port is in use
         return False  # Port is not in use
     except subprocess.CalledProcessError as e:
         print(f"Error checking port {port}: {e}")
@@ -40,8 +41,7 @@ def is_port_in_use(port):
 
 def close_port_if_running(port):
     try:
-        # Use Windows-compatible command to kill process on port
-        subprocess.run(f'for /f "tokens=5" %a in (\'netstat -aon ^| findstr :{port}\') do taskkill /f /pid %a', shell=True)
+        subprocess.run(["fuser", "-k", f"{port}/tcp"])
         print(f"Closed port {port}.")
     except Exception as e:
         print(f"Error closing port {port}: {e}")
@@ -258,37 +258,39 @@ class Stream(EventDispatcher):
                         
                         # Handle new JSON data structure
                         if "utils" in json_data and "compass" in json_data and "gps" in json_data and "autonomous" in json_data:
+                            # Initialize update_utils with the new data structure
+                            self.update_utils = {
+                                "gps": json_data["gps"],
+                                "compass": json_data["compass"],
+                                "autonomous": json_data["autonomous"]
+                            }
+                            
                             # Parse utils data (format: "#1=26.66=55.56")
                             utils_str = json_data["utils"]
-                            
-                            # Initialize utils data with defaults
-                            utils_data = {
-                                "armstate": "0",
-                                "batvoltage": "0.0",
-                                "jetsonvoltage": "0.0"
-                            }
                             
                             # Try to parse utils string if it's in the expected format
                             if utils_str and utils_str.strip() and utils_str.startswith("#"):
                                 parts = utils_str[1:].split("=")
                                 if len(parts) >= 3:
-                                    utils_data.update({
+                                    self.update_utils.update({
                                         "armstate": parts[0],
                                         "batvoltage": parts[1],
                                         "jetsonvoltage": parts[2]
                                     })
                                 else:
                                     print("Utils data format incorrect, using default values")
+                                    self.update_utils.update({
+                                        "armstate": "0",
+                                        "batvoltage": "0.0",
+                                        "jetsonvoltage": "0.0"
+                                    })
                             else:
                                 print(f"Utils data not in expected format: '{utils_str}', using default values")
-                            
-                            # Create complete update_utils dictionary and reassign to trigger property change
-                            new_update_utils = {
-                                "gps": json_data["gps"],
-                                "compass": json_data["compass"],
-                                "autonomous": json_data["autonomous"],
-                                **utils_data  # Include the parsed utils data
-                            }
+                                self.update_utils.update({
+                                    "armstate": "0",
+                                    "batvoltage": "0.0",
+                                    "jetsonvoltage": "0.0"
+                                })
                             
                             # Update compass widget
                             if json_data["compass"] != "None" and self.compasswidget is not None:
