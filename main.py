@@ -573,31 +573,38 @@ class MainScreen(Screen):
     def update_autonomous_display(self, autonomous_data):
         """Update autonomous navigation display with new data"""
         try:
+            print(f"[DEBUG] Updating autonomous display with data: {autonomous_data}")
+            
             # Mode display
             mode = autonomous_data.get("mode", "manual")
             self.autonomous_mode = mode.capitalize()
             
-            # Navigation status
+            # Mission state and status
+            mission_state = autonomous_data.get("mission_state", "not_started")
+            navigation_state = autonomous_data.get("navigation_state", "Unknown")
             nav_active = autonomous_data.get("navigation_active", False)
             nav_paused = autonomous_data.get("navigation_paused", False)
-            nav_state = autonomous_data.get("navigation_state", "Unknown")
             
+            # Navigation status with more detailed logic
             if nav_active and not nav_paused:
                 nav_status = "Active"
                 nav_color = (0.2, 0.8, 0.2, 1)  # Green
             elif nav_paused:
                 nav_status = "Paused"
                 nav_color = (0.8, 0.6, 0.2, 1)  # Orange
+            elif mission_state == "not_started":
+                nav_status = "Not Started"
+                nav_color = (0.6, 0.6, 0.6, 1)  # Gray
             else:
                 nav_status = "Inactive"
                 nav_color = (0.8, 0.2, 0.2, 1)  # Red
                 
             self.navigation_status = nav_status
             self.navigation_color = nav_color
-            self.navigation_state = nav_state
+            self.navigation_state = navigation_state
             
-            # Waypoint progress
-            current_wp = autonomous_data.get("current_waypoint_num", 0)
+            # Waypoint progress with more details
+            current_wp = autonomous_data.get("current_waypoint_num")
             total_wp = autonomous_data.get("total_waypoints", 0)
             completed_wp = autonomous_data.get("completed_waypoints", 0)
             mission_progress = autonomous_data.get("mission_progress_percent", 0)
@@ -625,6 +632,24 @@ class MainScreen(Screen):
             self.mission_complete = mission_complete
             self.has_pending_waypoints = has_pending_waypoints
             
+            # Additional mission details
+            self.mission_state = mission_state
+            self.system_stopped = autonomous_data.get("system_stopped", False)
+            self.navigation_thread_alive = autonomous_data.get("navigation_thread_alive", False)
+            self.estimated_time_to_waypoint = autonomous_data.get("estimated_time_to_waypoint")
+            self.mission_duration = autonomous_data.get("mission_duration")
+            self.total_distance_traveled = autonomous_data.get("total_distance_traveled", 0.0)
+            self.next_waypoint_position = autonomous_data.get("next_waypoint_position")
+            self.current_waypoint_details = autonomous_data.get("current_waypoint_details")
+            
+            print(f"[DEBUG] Mission State: {mission_state}")
+            print(f"[DEBUG] Current Waypoint: {current_wp}")
+            print(f"[DEBUG] Total Waypoints: {total_wp}")
+            print(f"[DEBUG] Completed Waypoints: {completed_wp}")
+            print(f"[DEBUG] Mission Progress: {mission_progress}%")
+            print(f"[DEBUG] Distance to Waypoint: {distance_to_wp}")
+            print(f"[DEBUG] Navigation State: {navigation_state}")
+            
             # Update detailed labels
             self.update_autonomous_labels()
             
@@ -634,13 +659,16 @@ class MainScreen(Screen):
     def update_autonomous_labels(self):
         """Update the detailed autonomous navigation labels"""
         try:
-            # Mission status
+            # Mission status with more detailed information
             if hasattr(self, 'mission_complete') and self.mission_complete:
                 mission_text = "Mission: Complete"
                 mission_color = (0.2, 0.8, 0.2, 1)  # Green
             elif hasattr(self, 'has_pending_waypoints') and self.has_pending_waypoints:
                 mission_text = "Mission: Active"
                 mission_color = (0.2, 0.6, 0.8, 1)  # Blue
+            elif hasattr(self, 'mission_state') and self.mission_state == "not_started":
+                mission_text = "Mission: Not Started"
+                mission_color = (0.6, 0.6, 0.6, 1)  # Gray
             else:
                 mission_text = "Mission: No Mission"
                 mission_color = (0.6, 0.6, 0.6, 1)  # Gray
@@ -649,17 +677,39 @@ class MainScreen(Screen):
                 self.mission_status_label.text = mission_text
                 self.mission_status_label.color = mission_color
             
-            # Waypoint progress
+            # Waypoint progress with current waypoint number
             if hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
-                wp_text = f"Waypoints: {self.completed_waypoints}/{self.total_waypoints}"
+                current_wp = getattr(self, 'current_waypoint', None)
+                if current_wp is not None:
+                    wp_text = f"Waypoints: {self.completed_waypoints}/{self.total_waypoints} (Current: {current_wp})"
+                else:
+                    wp_text = f"Waypoints: {self.completed_waypoints}/{self.total_waypoints}"
+                
                 if hasattr(self, 'waypoint_detail_label'):
                     self.waypoint_detail_label.text = wp_text
             
-            # Distance to waypoint
+            # Distance to waypoint with more details
             if hasattr(self, 'distance_to_waypoint') and self.distance_to_waypoint is not None:
                 try:
                     distance = float(self.distance_to_waypoint)
                     distance_text = f"Distance: {distance:.1f}m"
+                    
+                    # Add heading information if available
+                    if hasattr(self, 'heading_to_waypoint') and self.heading_to_waypoint is not None:
+                        try:
+                            heading = float(self.heading_to_waypoint)
+                            distance_text += f" | Heading: {heading:.1f}°"
+                        except (ValueError, TypeError):
+                            pass
+                            
+                    # Add heading correction if available
+                    if hasattr(self, 'heading_correction') and self.heading_correction is not None:
+                        try:
+                            correction = float(self.heading_correction)
+                            distance_text += f" | Corr: {correction:.1f}°"
+                        except (ValueError, TypeError):
+                            pass
+                            
                 except (ValueError, TypeError):
                     distance_text = "Distance: N/A"
             else:
@@ -668,12 +718,36 @@ class MainScreen(Screen):
             if hasattr(self, 'distance_label'):
                 self.distance_label.text = distance_text
             
-            # Navigation state
+            # Navigation state with more details
             if hasattr(self, 'navigation_state'):
                 nav_text = f"State: {self.navigation_state}"
                 if hasattr(self, 'nav_state_label'):
                     self.nav_state_label.text = nav_text
                     self.nav_state_label.color = getattr(self, 'navigation_color', (0.4, 0.4, 0.4, 1))
+            
+            # Additional mission details
+            if hasattr(self, 'mission_progress'):
+                progress_text = f"Progress: {self.mission_progress:.1f}%"
+                if hasattr(self, 'mission_progress_label'):
+                    self.mission_progress_label.text = progress_text
+            
+            # Mission duration and distance traveled
+            if hasattr(self, 'mission_duration') and self.mission_duration is not None:
+                duration_text = f"Duration: {self.mission_duration}"
+                if hasattr(self, 'mission_duration_label'):
+                    self.mission_duration_label.text = duration_text
+            
+            if hasattr(self, 'total_distance_traveled'):
+                distance_traveled = getattr(self, 'total_distance_traveled', 0.0)
+                traveled_text = f"Traveled: {distance_traveled:.1f}m"
+                if hasattr(self, 'distance_traveled_label'):
+                    self.distance_traveled_label.text = traveled_text
+            
+            print(f"[DEBUG] Updated autonomous labels:")
+            print(f"[DEBUG] - Mission text: {mission_text}")
+            print(f"[DEBUG] - Waypoint text: {wp_text if 'wp_text' in locals() else 'N/A'}")
+            print(f"[DEBUG] - Distance text: {distance_text}")
+            print(f"[DEBUG] - Navigation text: {nav_text if 'nav_text' in locals() else 'N/A'}")
             
         except Exception as e:
             print(f"Error updating autonomous labels: {e}")
@@ -704,7 +778,44 @@ class MainScreen(Screen):
             self.navigation_status_label.color = getattr(self, 'navigation_color', (1,1,1,1))
         
         if hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
-            self.waypoint_progress_label.text = f"WP: {self.completed_waypoints}/{self.total_waypoints}"
+            current_wp = getattr(self, 'current_waypoint', None)
+            if current_wp is not None:
+                self.waypoint_progress_label.text = f"WP: {self.completed_waypoints}/{self.total_waypoints} (Cur: {current_wp})"
+            else:
+                self.waypoint_progress_label.text = f"WP: {self.completed_waypoints}/{self.total_waypoints}"
+        
+        # Update additional autonomous information
+        if hasattr(self, 'mission_progress'):
+            progress_text = f"Progress: {self.mission_progress:.1f}%"
+            if hasattr(self, 'mission_progress_label'):
+                self.mission_progress_label.text = progress_text
+        
+        if hasattr(self, 'distance_to_waypoint') and self.distance_to_waypoint is not None:
+            try:
+                distance = float(self.distance_to_waypoint)
+                distance_text = f"Dist: {distance:.1f}m"
+                if hasattr(self, 'heading_to_waypoint') and self.heading_to_waypoint is not None:
+                    try:
+                        heading = float(self.heading_to_waypoint)
+                        distance_text += f" | {heading:.1f}°"
+                    except (ValueError, TypeError):
+                        pass
+                if hasattr(self, 'distance_label'):
+                    self.distance_label.text = distance_text
+            except (ValueError, TypeError):
+                if hasattr(self, 'distance_label'):
+                    self.distance_label.text = "Dist: N/A"
+        
+        if hasattr(self, 'mission_duration') and self.mission_duration is not None:
+            duration_text = f"Duration: {self.mission_duration}"
+            if hasattr(self, 'mission_duration_label'):
+                self.mission_duration_label.text = duration_text
+        
+        if hasattr(self, 'total_distance_traveled'):
+            distance_traveled = getattr(self, 'total_distance_traveled', 0.0)
+            traveled_text = f"Traveled: {distance_traveled:.1f}m"
+            if hasattr(self, 'distance_traveled_label'):
+                self.distance_traveled_label.text = traveled_text
         
         # Enable/disable Map Plotting button and show GPS status
         if self.gps_fix:
