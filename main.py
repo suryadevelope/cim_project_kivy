@@ -575,80 +575,67 @@ class MainScreen(Screen):
         try:
             print(f"[DEBUG] Updating autonomous display with data: {autonomous_data}")
             
-            # Mode display
-            mode = autonomous_data.get("mode", "manual")
-            self.autonomous_mode = mode.capitalize()
+            # Handle new autonomous data structure
+            wp_loaded_count = autonomous_data.get("wp_loaded_count", 0)
+            vh_autonomous = autonomous_data.get("vh_autonomous", False)
+            run_status = autonomous_data.get("run_status", False)
+            wp_number = autonomous_data.get("wp_number")
+            wp_distance = autonomous_data.get("wp_distance")
+            compass_err = autonomous_data.get("compass_err")
             
-            # Mission state and status
-            mission_state = autonomous_data.get("mission_state", "not_started")
-            navigation_state = autonomous_data.get("navigation_state", "Unknown")
-            nav_active = autonomous_data.get("navigation_active", False)
-            nav_paused = autonomous_data.get("navigation_paused", False)
+            # Determine autonomous mode based on vh_autonomous
+            if vh_autonomous:
+                self.autonomous_mode = "Autonomous"
+            else:
+                self.autonomous_mode = "Manual"
             
-            # Navigation status with more detailed logic
-            if nav_active and not nav_paused:
+            # Determine navigation status based on run_status
+            if run_status:
                 nav_status = "Active"
                 nav_color = (0.2, 0.8, 0.2, 1)  # Green
-            elif nav_paused:
-                nav_status = "Paused"
-                nav_color = (0.8, 0.6, 0.2, 1)  # Orange
-            elif mission_state == "not_started":
-                nav_status = "Not Started"
-                nav_color = (0.6, 0.6, 0.6, 1)  # Gray
             else:
                 nav_status = "Inactive"
                 nav_color = (0.8, 0.2, 0.2, 1)  # Red
                 
             self.navigation_status = nav_status
             self.navigation_color = nav_color
-            self.navigation_state = navigation_state
+            self.navigation_state = "Running" if run_status else "Stopped"
             
-            # Waypoint progress with more details
-            current_wp = autonomous_data.get("current_waypoint_num")
-            total_wp = autonomous_data.get("total_waypoints", 0)
-            completed_wp = autonomous_data.get("completed_waypoints", 0)
-            mission_progress = autonomous_data.get("mission_progress_percent", 0)
+            # Waypoint information
+            self.current_waypoint = wp_number
+            self.total_waypoints = wp_loaded_count
+            self.completed_waypoints = 0  # Not provided in new data structure
+            self.mission_progress = 0  # Not provided in new data structure
             
-            self.current_waypoint = current_wp
-            self.total_waypoints = total_wp
-            self.completed_waypoints = completed_wp
-            self.mission_progress = mission_progress
-            
-            # Distance and heading to waypoint
-            distance_to_wp = autonomous_data.get("distance_to_waypoint")
-            heading_to_wp = autonomous_data.get("heading_to_waypoint")
-            heading_correction = autonomous_data.get("heading_correction")
-            current_heading = autonomous_data.get("current_heading")
-            
-            self.distance_to_waypoint = distance_to_wp
-            self.heading_to_waypoint = heading_to_wp
-            self.heading_correction = heading_correction
-            self.current_heading = current_heading
+            # Distance to waypoint
+            self.distance_to_waypoint = wp_distance
+            self.heading_to_waypoint = None  # Not provided in new data structure
+            self.heading_correction = compass_err
+            self.current_heading = None  # Not provided in new data structure
             
             # Mission status
-            mission_complete = autonomous_data.get("mission_complete", False)
-            has_pending_waypoints = autonomous_data.get("has_pending_waypoints", False)
-            
-            self.mission_complete = mission_complete
-            self.has_pending_waypoints = has_pending_waypoints
+            self.mission_complete = False  # Not provided in new data structure
+            self.has_pending_waypoints = wp_loaded_count > 0
             
             # Additional mission details
-            self.mission_state = mission_state
-            self.system_stopped = autonomous_data.get("system_stopped", False)
-            self.navigation_thread_alive = autonomous_data.get("navigation_thread_alive", False)
-            self.estimated_time_to_waypoint = autonomous_data.get("estimated_time_to_waypoint")
-            self.mission_duration = autonomous_data.get("mission_duration")
-            self.total_distance_traveled = autonomous_data.get("total_distance_traveled", 0.0)
-            self.next_waypoint_position = autonomous_data.get("next_waypoint_position")
-            self.current_waypoint_details = autonomous_data.get("current_waypoint_details")
+            self.mission_state = "active" if run_status else "not_started"
+            self.system_stopped = not run_status
+            self.navigation_thread_alive = run_status
+            self.estimated_time_to_waypoint = None  # Not provided in new data structure
+            self.mission_duration = None  # Not provided in new data structure
+            self.total_distance_traveled = 0.0  # Not provided in new data structure
+            self.next_waypoint_position = None  # Not provided in new data structure
+            self.current_waypoint_details = None  # Not provided in new data structure
             
-            print(f"[DEBUG] Mission State: {mission_state}")
-            print(f"[DEBUG] Current Waypoint: {current_wp}")
-            print(f"[DEBUG] Total Waypoints: {total_wp}")
-            print(f"[DEBUG] Completed Waypoints: {completed_wp}")
-            print(f"[DEBUG] Mission Progress: {mission_progress}%")
-            print(f"[DEBUG] Distance to Waypoint: {distance_to_wp}")
-            print(f"[DEBUG] Navigation State: {navigation_state}")
+            print(f"[DEBUG] Mission State: {self.mission_state}")
+            print(f"[DEBUG] Current Waypoint: {wp_number}")
+            print(f"[DEBUG] Total Waypoints: {wp_loaded_count}")
+            print(f"[DEBUG] Completed Waypoints: {self.completed_waypoints}")
+            print(f"[DEBUG] Mission Progress: {self.mission_progress}%")
+            print(f"[DEBUG] Distance to Waypoint: {wp_distance}")
+            print(f"[DEBUG] Navigation State: {self.navigation_state}")
+            print(f"[DEBUG] Autonomous Mode: {self.autonomous_mode}")
+            print(f"[DEBUG] Run Status: {run_status}")
             
             # Update detailed labels
             self.update_autonomous_labels()
@@ -694,14 +681,6 @@ class MainScreen(Screen):
                     distance = float(self.distance_to_waypoint)
                     distance_text = f"Distance: {distance:.1f}m"
                     
-                    # Add heading information if available
-                    if hasattr(self, 'heading_to_waypoint') and self.heading_to_waypoint is not None:
-                        try:
-                            heading = float(self.heading_to_waypoint)
-                            distance_text += f" | Heading: {heading:.1f}°"
-                        except (ValueError, TypeError):
-                            pass
-                            
                     # Add heading correction if available
                     if hasattr(self, 'heading_correction') and self.heading_correction is not None:
                         try:
@@ -794,10 +773,10 @@ class MainScreen(Screen):
             try:
                 distance = float(self.distance_to_waypoint)
                 distance_text = f"Dist: {distance:.1f}m"
-                if hasattr(self, 'heading_to_waypoint') and self.heading_to_waypoint is not None:
+                if hasattr(self, 'heading_correction') and self.heading_correction is not None:
                     try:
-                        heading = float(self.heading_to_waypoint)
-                        distance_text += f" | {heading:.1f}°"
+                        correction = float(self.heading_correction)
+                        distance_text += f" | Corr: {correction:.1f}°"
                     except (ValueError, TypeError):
                         pass
                 if hasattr(self, 'distance_label'):
