@@ -320,6 +320,17 @@ class MainScreen(Screen):
         self.satellite_toggle = ToggleButton(text="Satellite View", size_hint=(None, 1), width=120, background_color=(0.2, 0.6, 0.8, 1))
         self.satellite_toggle.bind(state=self.on_satellite_toggle)
         map_controls.add_widget(self.satellite_toggle)
+        
+        # Zoom controls
+        zoom_controls = BoxLayout(orientation='horizontal', size_hint=(None, 1), width=80, spacing=2)
+        self.zoom_in_btn = Button(text="+", size_hint=(None, 1), width=35, background_color=(0.2, 0.7, 0.2, 1), font_size='16sp')
+        self.zoom_out_btn = Button(text="-", size_hint=(None, 1), width=35, background_color=(0.7, 0.2, 0.2, 1), font_size='16sp')
+        self.zoom_in_btn.bind(on_release=self.zoom_in)
+        self.zoom_out_btn.bind(on_release=self.zoom_out)
+        zoom_controls.add_widget(self.zoom_out_btn)
+        zoom_controls.add_widget(self.zoom_in_btn)
+        map_controls.add_widget(zoom_controls)
+        
         map_controls.add_widget(Label(size_hint_x=1))  # Spacer
         left_panel.add_widget(map_controls)
         
@@ -965,6 +976,26 @@ class MainScreen(Screen):
         except Exception as e:
             print(f"Satellite toggle error: {e}")
 
+    def zoom_in(self, instance):
+        """Zoom in the map"""
+        try:
+            if hasattr(self, 'mapview') and self.mapview:
+                current_zoom = self.mapview.zoom
+                new_zoom = min(current_zoom + 1, 20)  # Max zoom level is 20
+                self.mapview.zoom = new_zoom
+        except Exception as e:
+            print(f"Zoom in error: {e}")
+
+    def zoom_out(self, instance):
+        """Zoom out the map"""
+        try:
+            if hasattr(self, 'mapview') and self.mapview:
+                current_zoom = self.mapview.zoom
+                new_zoom = max(current_zoom - 1, 1)  # Min zoom level is 1
+                self.mapview.zoom = new_zoom
+        except Exception as e:
+            print(f"Zoom out error: {e}")
+
     def send_start_status(self, instance):
         self.last_status = 'start'
         self.send_status_udp('start')
@@ -1050,16 +1081,26 @@ class MapPlotScreen(Screen):
         self.clear_mission_btn = Button(text="Clear Mission", size_hint=(None, 1), width=140, background_color=(0.8,0.2,0.2,1))
         self.write_mission_btn = Button(text="Write Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.7,0.2,1))
         self.satellite_toggle_mapplot = ToggleButton(text="Satellite View", size_hint=(None, 1), width=120, background_color=(0.2, 0.6, 0.8, 1))
+        
+        # Zoom controls for MapPlotScreen
+        self.zoom_in_btn_mapplot = Button(text="+", size_hint=(None, 1), width=35, background_color=(0.2, 0.7, 0.2, 1), font_size='16sp')
+        self.zoom_out_btn_mapplot = Button(text="-", size_hint=(None, 1), width=35, background_color=(0.7, 0.2, 0.2, 1), font_size='16sp')
+        
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
         self.clear_mission_btn.bind(on_release=self.clear_mission)
         self.write_mission_btn.bind(on_release=self.write_mission)
         self.satellite_toggle_mapplot.bind(state=self.on_satellite_toggle_mapplot)
+        self.zoom_in_btn_mapplot.bind(on_release=self.zoom_in_mapplot)
+        self.zoom_out_btn_mapplot.bind(on_release=self.zoom_out_mapplot)
+        
         controls.add_widget(self.zoom_my_loc_btn)
         controls.add_widget(self.zoom_last_marker_btn)
         controls.add_widget(self.clear_mission_btn)
         controls.add_widget(self.write_mission_btn)
         controls.add_widget(self.satellite_toggle_mapplot)
+        controls.add_widget(self.zoom_out_btn_mapplot)
+        controls.add_widget(self.zoom_in_btn_mapplot)
         controls.add_widget(Label(size_hint_x=1))
         layout.add_widget(controls)
         try:
@@ -1098,6 +1139,26 @@ class MapPlotScreen(Screen):
                 self.mapview.zoom = 18
             except Exception as e:
                 print(f"Zoom to last marker error: {e}")
+
+    def zoom_in_mapplot(self, instance):
+        """Zoom in the map in MapPlotScreen"""
+        try:
+            if hasattr(self, 'mapview') and self.mapview:
+                current_zoom = self.mapview.zoom
+                new_zoom = min(current_zoom + 1, 20)  # Max zoom level is 20
+                self.mapview.zoom = new_zoom
+        except Exception as e:
+            print(f"Zoom in mapplot error: {e}")
+
+    def zoom_out_mapplot(self, instance):
+        """Zoom out the map in MapPlotScreen"""
+        try:
+            if hasattr(self, 'mapview') and self.mapview:
+                current_zoom = self.mapview.zoom
+                new_zoom = max(current_zoom - 1, 1)  # Min zoom level is 1
+                self.mapview.zoom = new_zoom
+        except Exception as e:
+            print(f"Zoom out mapplot error: {e}")
 
     def on_map_touch_down(self, mapview, touch):
         # Only handle right-clicks
