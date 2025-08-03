@@ -314,8 +314,18 @@ class MainScreen(Screen):
 
         # --- Left: MapView (top) and CompassWidget + Start/Stop (bottom) ---
         left_panel = BoxLayout(orientation='vertical', spacing=12, size_hint=(0.48, 1))
-        mapview_container = BoxLayout(size_hint=(1, 0.62), padding=0)
+        
+        # Map controls row
+        map_controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40, spacing=10, padding=[5, 5, 5, 5])
+        self.satellite_toggle = ToggleButton(text="Satellite View", size_hint=(None, 1), width=120, background_color=(0.2, 0.6, 0.8, 1))
+        self.satellite_toggle.bind(state=self.on_satellite_toggle)
+        map_controls.add_widget(self.satellite_toggle)
+        map_controls.add_widget(Label(size_hint_x=1))  # Spacer
+        left_panel.add_widget(map_controls)
+        
+        mapview_container = BoxLayout(size_hint=(1, 0.58), padding=0)  # Reduced height to accommodate controls
         try:
+            # Initialize with regular map source
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             self.mapview.size_hint = (1, 1)
             # Add GPS marker (small size)
@@ -936,6 +946,25 @@ class MainScreen(Screen):
             self.mapview.lat = lat
             self.mapview.lon = lon
 
+    def on_satellite_toggle(self, instance, state):
+        """Toggle between regular and satellite map view"""
+        try:
+            if hasattr(self, 'mapview') and self.mapview:
+                if state == 'down':  # Satellite view
+                    # Switch to satellite map source
+                    satellite_source = MapSource(url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")
+                    self.mapview.map_source = satellite_source
+                    self.satellite_toggle.text = "Regular View"
+                    self.satellite_toggle.background_color = (0.8, 0.4, 0.2, 1)  # Orange
+                else:  # Regular view
+                    # Switch to regular map source
+                    regular_source = MapSource(url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}")
+                    self.mapview.map_source = regular_source
+                    self.satellite_toggle.text = "Satellite View"
+                    self.satellite_toggle.background_color = (0.2, 0.6, 0.8, 1)  # Blue
+        except Exception as e:
+            print(f"Satellite toggle error: {e}")
+
     def send_start_status(self, instance):
         self.last_status = 'start'
         self.send_status_udp('start')
@@ -1020,14 +1049,17 @@ class MapPlotScreen(Screen):
         self.zoom_last_marker_btn = Button(text="Zoom to Last Marker", size_hint=(None, 1), width=180)
         self.clear_mission_btn = Button(text="Clear Mission", size_hint=(None, 1), width=140, background_color=(0.8,0.2,0.2,1))
         self.write_mission_btn = Button(text="Write Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.7,0.2,1))
+        self.satellite_toggle_mapplot = ToggleButton(text="Satellite View", size_hint=(None, 1), width=120, background_color=(0.2, 0.6, 0.8, 1))
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
         self.clear_mission_btn.bind(on_release=self.clear_mission)
         self.write_mission_btn.bind(on_release=self.write_mission)
+        self.satellite_toggle_mapplot.bind(state=self.on_satellite_toggle_mapplot)
         controls.add_widget(self.zoom_my_loc_btn)
         controls.add_widget(self.zoom_last_marker_btn)
         controls.add_widget(self.clear_mission_btn)
         controls.add_widget(self.write_mission_btn)
+        controls.add_widget(self.satellite_toggle_mapplot)
         controls.add_widget(Label(size_hint_x=1))
         layout.add_widget(controls)
         try:
@@ -1249,6 +1281,25 @@ class MapPlotScreen(Screen):
                 print(f"Mission send error: {e}")
                 Clock.schedule_once(lambda dt: toast(f"Mission send failed"))
         threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
+
+    def on_satellite_toggle_mapplot(self, instance, state):
+        """Toggle between regular and satellite map view for MapPlotScreen"""
+        try:
+            if hasattr(self, 'mapview') and self.mapview:
+                if state == 'down':  # Satellite view
+                    # Switch to satellite map source
+                    satellite_source = MapSource(url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")
+                    self.mapview.map_source = satellite_source
+                    self.satellite_toggle_mapplot.text = "Regular View"
+                    self.satellite_toggle_mapplot.background_color = (0.8, 0.4, 0.2, 1)  # Orange
+                else:  # Regular view
+                    # Switch to regular map source
+                    regular_source = MapSource(url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}")
+                    self.mapview.map_source = regular_source
+                    self.satellite_toggle_mapplot.text = "Satellite View"
+                    self.satellite_toggle_mapplot.background_color = (0.2, 0.6, 0.8, 1)  # Blue
+        except Exception as e:
+            print(f"Satellite toggle error: {e}")
 
     def go_back(self, instance):
         self.manager.current = 'main'
