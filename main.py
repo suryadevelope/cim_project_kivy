@@ -17,6 +17,7 @@ except ImportError:
 from kivy.uix.image import Image
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button, Label
+from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.uix.video import Video
 from kivy.uix.popup import Popup
@@ -38,7 +39,7 @@ from kivy.core.window import Window
 from kivy.animation import Animation
 
 from cameras import VideoReceiver
-from kivy.properties import StringProperty
+from kivy.properties import StringProperty, NumericProperty
 from kivymd.toast import toast
 from kivymd.uix.card import MDCard
 from gtts import gTTS
@@ -109,9 +110,6 @@ Builder.load_string('''
             canvas.after:
                 PopMatrix
 ''')
-
-
-from kivy.properties import NumericProperty
 
 class CompassWidget(BoxLayout):
     needle_angle = NumericProperty(0)
@@ -214,7 +212,6 @@ class SplashScreen(Screen):
 # Main Screen
 
 # Custom MapMarker with rotation support for heading
-from kivy.properties import NumericProperty
 from kivy.graphics.context_instructions import PushMatrix, PopMatrix, Rotate
 
 class RotatingMapMarker(MapMarker):
@@ -1086,6 +1083,9 @@ class MapPlotScreen(Screen):
         self.zoom_in_btn_mapplot = Button(text="+", size_hint=(None, 1), width=35, background_color=(0.2, 0.7, 0.2, 1), font_size='16sp')
         self.zoom_out_btn_mapplot = Button(text="-", size_hint=(None, 1), width=35, background_color=(0.7, 0.2, 0.2, 1), font_size='16sp')
         
+        # Add marker button
+        self.add_marker_btn = Button(text="Add Marker", size_hint=(None, 1), width=120, background_color=(0.8, 0.4, 0.2, 1))
+        
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
         self.clear_mission_btn.bind(on_release=self.clear_mission)
@@ -1093,12 +1093,14 @@ class MapPlotScreen(Screen):
         self.satellite_toggle_mapplot.bind(state=self.on_satellite_toggle_mapplot)
         self.zoom_in_btn_mapplot.bind(on_release=self.zoom_in_mapplot)
         self.zoom_out_btn_mapplot.bind(on_release=self.zoom_out_mapplot)
+        self.add_marker_btn.bind(on_release=self.show_add_marker_dialog)
         
         controls.add_widget(self.zoom_my_loc_btn)
         controls.add_widget(self.zoom_last_marker_btn)
         controls.add_widget(self.clear_mission_btn)
         controls.add_widget(self.write_mission_btn)
         controls.add_widget(self.satellite_toggle_mapplot)
+        controls.add_widget(self.add_marker_btn)
         controls.add_widget(self.zoom_out_btn_mapplot)
         controls.add_widget(self.zoom_in_btn_mapplot)
         controls.add_widget(Label(size_hint_x=1))
@@ -1361,6 +1363,106 @@ class MapPlotScreen(Screen):
                     self.satellite_toggle_mapplot.background_color = (0.2, 0.6, 0.8, 1)  # Blue
         except Exception as e:
             print(f"Satellite toggle error: {e}")
+
+    def show_add_marker_dialog(self, instance):
+        """Show dialog to enter latitude and longitude coordinates"""
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        
+        # Latitude input
+        lat_layout = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40)
+        lat_label = Label(text="Latitude:", size_hint=(None, 1), width=80)
+        self.lat_input = TextInput(hint_text="Enter latitude (e.g., 12.9716)", multiline=False, size_hint=(1, 1))
+        lat_layout.add_widget(lat_label)
+        lat_layout.add_widget(self.lat_input)
+        
+        # Longitude input
+        lon_layout = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40)
+        lon_label = Label(text="Longitude:", size_hint=(None, 1), width=80)
+        self.lon_input = TextInput(hint_text="Enter longitude (e.g., 77.5946)", multiline=False, size_hint=(1, 1))
+        lon_layout.add_widget(lon_label)
+        lon_layout.add_widget(self.lon_input)
+        
+        # Buttons
+        btn_layout = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40, spacing=10)
+        add_btn = Button(text="Add Marker", size_hint=(1, 1), background_color=(0.2, 0.7, 0.2, 1))
+        cancel_btn = Button(text="Cancel", size_hint=(1, 1), background_color=(0.7, 0.2, 0.2, 1))
+        
+        content.add_widget(lat_layout)
+        content.add_widget(lon_layout)
+        content.add_widget(btn_layout)
+        btn_layout.add_widget(add_btn)
+        btn_layout.add_widget(cancel_btn)
+        
+        popup = Popup(title="Add Marker by Coordinates", content=content, 
+                     size_hint=(None, None), size=(400, 200), auto_dismiss=False)
+        
+        add_btn.bind(on_release=lambda inst: self.add_marker_by_coordinates(popup))
+        cancel_btn.bind(on_release=popup.dismiss)
+        
+        popup.open()
+
+    def add_marker_by_coordinates(self, popup):
+        """Add a marker at the specified coordinates"""
+        try:
+            lat = float(self.lat_input.text.strip())
+            lon = float(self.lon_input.text.strip())
+            
+            # Validate coordinates
+            if not (-90 <= lat <= 90):
+                self.show_error_dialog("Invalid latitude. Must be between -90 and 90.")
+                return
+            if not (-180 <= lon <= 180):
+                self.show_error_dialog("Invalid longitude. Must be between -180 and 180.")
+                return
+            
+            # Create and add marker
+            marker = MapMarker(lat=lat, lon=lon)
+            marker.size = (30, 30)
+            marker.bind(on_touch_down=self.on_marker_touch_down)
+            
+            # Add to map and track
+            self.mapview.add_marker(marker)
+            self.user_markers.append((marker, (lat, lon)))
+            
+            # Center map on new marker
+            self.mapview.center_on(lat, lon)
+            self.mapview.zoom = 18
+            
+            # Update path line
+            self.update_path_line()
+            
+            # Close popup and show success message
+            popup.dismiss()
+            self.show_success_dialog(f"Marker added at ({lat:.6f}, {lon:.6f})")
+            
+        except ValueError:
+            self.show_error_dialog("Please enter valid numeric coordinates.")
+        except Exception as e:
+            self.show_error_dialog(f"Error adding marker: {str(e)}")
+
+    def show_error_dialog(self, message):
+        """Show error dialog with message"""
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        content.add_widget(Label(text=message))
+        ok_btn = Button(text="OK", size_hint=(1, None), height=40)
+        content.add_widget(ok_btn)
+        
+        popup = Popup(title="Error", content=content, 
+                     size_hint=(None, None), size=(300, 150), auto_dismiss=False)
+        ok_btn.bind(on_release=popup.dismiss)
+        popup.open()
+
+    def show_success_dialog(self, message):
+        """Show success dialog with message"""
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        content.add_widget(Label(text=message))
+        ok_btn = Button(text="OK", size_hint=(1, None), height=40, background_color=(0.2, 0.7, 0.2, 1))
+        content.add_widget(ok_btn)
+        
+        popup = Popup(title="Success", content=content, 
+                     size_hint=(None, None), size=(300, 150), auto_dismiss=False)
+        ok_btn.bind(on_release=popup.dismiss)
+        popup.open()
 
     def go_back(self, instance):
         self.manager.current = 'main'
