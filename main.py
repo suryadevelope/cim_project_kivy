@@ -2166,41 +2166,72 @@ class MapPlotScreen(Screen):
         if hasattr(app, 'root') and app.root is not None:
             try:
                 main_screen = app.root.get_screen('main')
+                print(f"Main screen found: {main_screen}")
+                print(f"Control mode: {getattr(main_screen, 'control_mode', 'NOT_SET')}")
+                print(f"Firebase control available: {hasattr(main_screen, 'firebase_control')}")
+                
+                if hasattr(main_screen, 'firebase_control') and main_screen.firebase_control:
+                    print(f"Firebase control mode: {main_screen.firebase_control.get_control_mode()}")
+                    print(f"Firebase connected: {main_screen.firebase_control.is_firebase_connected()}")
+                
                 if hasattr(main_screen, 'control_mode') and main_screen.control_mode == "hardware":
+                    print("Sending mission via UDP (hardware mode)")
                     threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
                 elif hasattr(main_screen, 'control_mode') and main_screen.control_mode == "internet" and hasattr(main_screen, 'firebase_control') and main_screen.firebase_control:
                     # Send via Firebase (internet mode)
                     try:
+                        print(f"=== FIREBASE MISSION UPLOAD DEBUG ===")
                         print(f"Attempting to send mission to Firebase in internet mode")
                         print(f"Firebase control mode: {main_screen.firebase_control.get_control_mode()}")
                         print(f"Firebase connected: {main_screen.firebase_control.is_firebase_connected()}")
+                        print(f"Mission points: {mission_points}")
+                        print(f"Last status: {last_status}")
                         
                         # Ensure Firebase control mode is synchronized
                         if main_screen.firebase_control.get_control_mode() != "internet":
                             print("Synchronizing Firebase control mode to internet")
                             main_screen.firebase_control.set_control_mode("internet")
+                            print(f"Firebase control mode after sync: {main_screen.firebase_control.get_control_mode()}")
+                        
+                        # Test Firebase connection before sending
+                        if not main_screen.firebase_control.is_firebase_connected():
+                            print("Firebase not connected, attempting to test connection...")
+                            if main_screen.firebase_control.test_connection():
+                                print("Firebase connection test passed")
+                            else:
+                                print("Firebase connection test failed")
+                                Clock.schedule_once(lambda dt: toast("Firebase connection failed"))
+                                return
                         
                         mission_data_dict = {"mission": mission_points, "status": last_status}
+                        print(f"Sending mission data: {mission_data_dict}")
+                        
                         success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
                         if success:
                             Clock.schedule_once(lambda dt: toast("Mission sent successfully to Firebase!"))
-                            print(f"Successfully sent mission to Firebase: {len(mission_points)} waypoints")
+                            print(f"✅ Successfully sent mission to Firebase: {len(mission_points)} waypoints")
                         else:
                             Clock.schedule_once(lambda dt: toast("Failed to send mission to Firebase"))
-                            print("Failed to send mission to Firebase")
+                            print("❌ Failed to send mission to Firebase")
                     except Exception as e:
-                        print(f"Error sending mission to Firebase: {e}")
+                        print(f"❌ Error sending mission to Firebase: {e}")
                         Clock.schedule_once(lambda dt: toast(f"Mission send to Firebase failed"))
                         import traceback
                         traceback.print_exc()
                 else:
+                    print(f"Control mode not properly set or Firebase not available")
+                    print(f"Control mode: {getattr(main_screen, 'control_mode', 'NOT_SET')}")
+                    print(f"Firebase control available: {hasattr(main_screen, 'firebase_control')}")
                     # Fallback to UDP if control mode is not properly set
                     threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
             except Exception as e:
                 print(f"Error determining control mode: {e}")
+                import traceback
+                traceback.print_exc()
                 # Fallback to UDP
                 threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
         else:
+            print("Main screen not available, falling back to UDP")
             # Fallback to UDP if main screen not available
             threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
 

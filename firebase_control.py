@@ -114,7 +114,7 @@ class FirebaseControl:
     def test_connection(self):
         """Test Firebase connection by writing and reading a test value"""
         try:
-            print("Testing Firebase connection...")
+            print("=== TESTING FIREBASE CONNECTION ===")
             test_data = {
                 "test": "connection",
                 "timestamp": datetime.now().isoformat(),
@@ -125,28 +125,28 @@ class FirebaseControl:
             print(f"Writing test data to path: {test_path}")
             # Write test data
             self.db.child(*test_path).set(test_data)
-            print("Test data written successfully")
+            print("✅ Test data written successfully")
             
             # Read test data back
             print("Reading test data back...")
             result = self.db.child(*test_path).get()
             if result.val():
-                print("Test data read successfully")
+                print("✅ Test data read successfully")
                 self.is_connected = True
-                print(f"Firebase connection status: {self.is_connected}")
+                print(f"✅ Firebase connection status: {self.is_connected}")
                 return True
             else:
-                print("Failed to read test data")
+                print("❌ Failed to read test data")
                 self.is_connected = False
-                print(f"Firebase connection status: {self.is_connected}")
+                print(f"❌ Firebase connection status: {self.is_connected}")
                 return False
                 
         except Exception as e:
-            print(f"Firebase connection test failed: {e}")
+            print(f"❌ Firebase connection test failed: {e}")
             import traceback
             traceback.print_exc()
             self.is_connected = False
-            print(f"Firebase connection status: {self.is_connected}")
+            print(f"❌ Firebase connection status: {self.is_connected}")
             return False
 
     def validate_autonomous_data(self, autonomous_data):
@@ -331,63 +331,101 @@ class FirebaseControl:
             traceback.print_exc()
             return False
     
+    def ensure_connection(self):
+        """Ensure Firebase connection is established"""
+        try:
+            if not self.is_connected:
+                print("Firebase not connected, attempting to establish connection...")
+                if self.test_connection():
+                    print("✅ Firebase connection established")
+                    return True
+                else:
+                    print("❌ Failed to establish Firebase connection")
+                    return False
+            else:
+                print("✅ Firebase already connected")
+                return True
+        except Exception as e:
+            print(f"❌ Error ensuring Firebase connection: {e}")
+            return False
+
     def send_autonomous_mission(self, mission_data):
         """Send autonomous mission data to Firebase with enhanced validation"""
         try:
+            print(f"=== FIREBASE SEND AUTONOMOUS MISSION DEBUG ===")
             print(f"send_autonomous_mission called with data: {mission_data}")
             print(f"Current control mode: {self.control_mode}")
             print(f"Firebase connected: {self.is_connected}")
             
+            # Ensure connection is established
+            if not self.ensure_connection():
+                print("❌ Cannot send mission: Firebase connection not available")
+                return False
+            
             if self.control_mode == "internet" and self.is_connected:
-                print("Conditions met for Firebase upload - proceeding with validation")
+                print("✅ Conditions met for Firebase upload - proceeding with validation")
                 # Validate the mission data structure
                 if isinstance(mission_data, dict) and "mission" in mission_data and "status" in mission_data:
+                    print("✅ Mission data structure is valid")
                     # Validate mission points
                     mission_points = mission_data.get("mission", [])
                     if isinstance(mission_points, list):
+                        print(f"✅ Mission points is a list with {len(mission_points)} points")
                         # Validate each mission point
                         valid_points = []
-                        for point in mission_points:
+                        for i, point in enumerate(mission_points):
                             if isinstance(point, (list, tuple)) and len(point) >= 2:
                                 # Ensure coordinates are numeric
                                 try:
                                     lat = float(point[0])
                                     lon = float(point[1])
                                     valid_points.append([lat, lon])
+                                    print(f"✅ Validated point {i}: [{lat}, {lon}]")
                                 except (ValueError, TypeError):
-                                    print(f"Invalid mission point coordinates: {point}")
+                                    print(f"❌ Invalid mission point coordinates: {point}")
                                     continue
                         
-                        # Create validated mission data
-                        validated_mission_data = {
-                            "mission": valid_points,
-                            "status": mission_data.get("status", "stop"),
-                            "timestamp": time.time(),
-                            "mission_count": len(valid_points)
-                        }
-                        
-                        print(f"Validated mission data: {validated_mission_data}")
-                        
-                        # Send to Firebase
-                        autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
-                        print(f"Sending to Firebase path: {autonomous_path}")
-                        self.db.child(*autonomous_path).set(validated_mission_data)
-                        print(f"Successfully sent autonomous mission to Firebase: {validated_mission_data}")
-                        return True
+                        if valid_points:
+                            # Create validated mission data
+                            validated_mission_data = {
+                                "mission": valid_points,
+                                "status": mission_data.get("status", "stop"),
+                                "timestamp": time.time(),
+                                "mission_count": len(valid_points)
+                            }
+                            
+                            print(f"✅ Validated mission data: {validated_mission_data}")
+                            
+                            # Send to Firebase
+                            autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                            print(f"📤 Sending to Firebase path: {autonomous_path}")
+                            
+                            try:
+                                self.db.child(*autonomous_path).set(validated_mission_data)
+                                print(f"✅ Successfully sent autonomous mission to Firebase: {validated_mission_data}")
+                                return True
+                            except Exception as firebase_error:
+                                print(f"❌ Firebase write error: {firebase_error}")
+                                import traceback
+                                traceback.print_exc()
+                                return False
+                        else:
+                            print("❌ No valid mission points found")
+                            return False
                     else:
-                        print(f"Invalid mission points format: {mission_points}")
+                        print(f"❌ Invalid mission points format: {mission_points}")
                         return False
                 else:
-                    print(f"Invalid mission data structure: {mission_data}")
+                    print(f"❌ Invalid mission data structure: {mission_data}")
                     return False
             else:
                 if self.control_mode != "internet":
-                    print(f"Not in internet mode (current mode: {self.control_mode})")
+                    print(f"❌ Not in internet mode (current mode: {self.control_mode})")
                 elif not self.is_connected:
-                    print("Firebase not connected")
+                    print("❌ Firebase not connected")
                 return False
         except Exception as e:
-            print(f"Error sending autonomous mission: {e}")
+            print(f"❌ Error sending autonomous mission: {e}")
             import traceback
             traceback.print_exc()
             return False
