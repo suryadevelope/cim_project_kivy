@@ -778,8 +778,9 @@ class MainScreen(Screen):
                 self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
                 
                 if self.firebase_control:
+                    print("Synchronizing Firebase control mode to internet")
                     self.firebase_control.set_control_mode("internet")
-                    print("Firebase control mode set to internet")
+                    print(f"Firebase control mode set to: {self.firebase_control.get_control_mode()}")
                 
                 # Update Stream control mode
                 if hasattr(streaming, 'set_control_mode'):
@@ -804,8 +805,9 @@ class MainScreen(Screen):
                 self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
                 
                 if self.firebase_control:
+                    print("Synchronizing Firebase control mode to hardware")
                     self.firebase_control.set_control_mode("hardware")
-                    print("Firebase control mode set to hardware")
+                    print(f"Firebase control mode set to: {self.firebase_control.get_control_mode()}")
                 
                 # Update Stream control mode
                 if hasattr(streaming, 'set_control_mode'):
@@ -1766,6 +1768,15 @@ class MainScreen(Screen):
         # Send via Firebase (internet mode)
         elif self.control_mode == "internet" and self.firebase_control:
             try:
+                print(f"Attempting to send autonomous mission to Firebase in internet mode")
+                print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
+                print(f"Firebase connected: {self.firebase_control.is_firebase_connected()}")
+                
+                # Ensure Firebase control mode is synchronized
+                if self.firebase_control.get_control_mode() != "internet":
+                    print("Synchronizing Firebase control mode to internet")
+                    self.firebase_control.set_control_mode("internet")
+                
                 mission_data = {"mission": mission_points, "status": status}
                 success = self.firebase_control.send_autonomous_mission(mission_data)
                 if success:
@@ -2160,6 +2171,15 @@ class MapPlotScreen(Screen):
                 elif hasattr(main_screen, 'control_mode') and main_screen.control_mode == "internet" and hasattr(main_screen, 'firebase_control') and main_screen.firebase_control:
                     # Send via Firebase (internet mode)
                     try:
+                        print(f"Attempting to send mission to Firebase in internet mode")
+                        print(f"Firebase control mode: {main_screen.firebase_control.get_control_mode()}")
+                        print(f"Firebase connected: {main_screen.firebase_control.is_firebase_connected()}")
+                        
+                        # Ensure Firebase control mode is synchronized
+                        if main_screen.firebase_control.get_control_mode() != "internet":
+                            print("Synchronizing Firebase control mode to internet")
+                            main_screen.firebase_control.set_control_mode("internet")
+                        
                         mission_data_dict = {"mission": mission_points, "status": last_status}
                         success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
                         if success:

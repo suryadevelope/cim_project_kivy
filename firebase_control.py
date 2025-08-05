@@ -122,19 +122,23 @@ class FirebaseControl:
             }
             test_path = FIREBASE_PATHS["system_status"].split("/")
             
+            print(f"Writing test data to path: {test_path}")
             # Write test data
             self.db.child(*test_path).set(test_data)
             print("Test data written successfully")
             
             # Read test data back
+            print("Reading test data back...")
             result = self.db.child(*test_path).get()
             if result.val():
                 print("Test data read successfully")
                 self.is_connected = True
+                print(f"Firebase connection status: {self.is_connected}")
                 return True
             else:
                 print("Failed to read test data")
                 self.is_connected = False
+                print(f"Firebase connection status: {self.is_connected}")
                 return False
                 
         except Exception as e:
@@ -142,6 +146,7 @@ class FirebaseControl:
             import traceback
             traceback.print_exc()
             self.is_connected = False
+            print(f"Firebase connection status: {self.is_connected}")
             return False
 
     def validate_autonomous_data(self, autonomous_data):
@@ -329,7 +334,12 @@ class FirebaseControl:
     def send_autonomous_mission(self, mission_data):
         """Send autonomous mission data to Firebase with enhanced validation"""
         try:
+            print(f"send_autonomous_mission called with data: {mission_data}")
+            print(f"Current control mode: {self.control_mode}")
+            print(f"Firebase connected: {self.is_connected}")
+            
             if self.control_mode == "internet" and self.is_connected:
+                print("Conditions met for Firebase upload - proceeding with validation")
                 # Validate the mission data structure
                 if isinstance(mission_data, dict) and "mission" in mission_data and "status" in mission_data:
                     # Validate mission points
@@ -356,10 +366,13 @@ class FirebaseControl:
                             "mission_count": len(valid_points)
                         }
                         
+                        print(f"Validated mission data: {validated_mission_data}")
+                        
                         # Send to Firebase
                         autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                        print(f"Sending to Firebase path: {autonomous_path}")
                         self.db.child(*autonomous_path).set(validated_mission_data)
-                        print(f"Sent autonomous mission to Firebase: {validated_mission_data}")
+                        print(f"Successfully sent autonomous mission to Firebase: {validated_mission_data}")
                         return True
                     else:
                         print(f"Invalid mission points format: {mission_points}")
@@ -399,11 +412,14 @@ class FirebaseControl:
     def set_control_mode(self, mode):
         """Set control mode (hardware/internet)"""
         if mode in ["hardware", "internet"]:
+            print(f"Setting Firebase control mode from {self.control_mode} to {mode}")
             self.control_mode = mode
             self.update_system_status()
             print(f"Control mode set to: {mode}")
             return True
-        return False
+        else:
+            print(f"Invalid control mode: {mode}")
+            return False
     
     def get_control_mode(self):
         """Get current control mode"""
