@@ -130,17 +130,66 @@ class FirebaseControl:
             result = self.db.child(*test_path).get()
             if result.val():
                 print("Test data read successfully")
+                self.is_connected = True
                 return True
             else:
                 print("Failed to read test data")
+                self.is_connected = False
                 return False
                 
         except Exception as e:
             print(f"Firebase connection test failed: {e}")
             import traceback
             traceback.print_exc()
+            self.is_connected = False
             return False
 
+    def validate_autonomous_data(self, autonomous_data):
+        """Validate autonomous data structure and content"""
+        try:
+            if not isinstance(autonomous_data, dict):
+                print("Invalid autonomous data: not a dictionary")
+                return False
+            
+            # Check required fields
+            required_fields = ["run_status", "vh_autonomous", "wp_loaded_count"]
+            for field in required_fields:
+                if field not in autonomous_data:
+                    print(f"Invalid autonomous data: missing required field '{field}'")
+                    return False
+            
+            # Validate data types
+            if not isinstance(autonomous_data["run_status"], bool):
+                print("Invalid autonomous data: run_status must be boolean")
+                return False
+            
+            if not isinstance(autonomous_data["vh_autonomous"], bool):
+                print("Invalid autonomous data: vh_autonomous must be boolean")
+                return False
+            
+            if not isinstance(autonomous_data["wp_loaded_count"], (int, float)):
+                print("Invalid autonomous data: wp_loaded_count must be numeric")
+                return False
+            
+            # Validate optional fields if present
+            if "wp_number" in autonomous_data and not isinstance(autonomous_data["wp_number"], (int, float, type(None))):
+                print("Invalid autonomous data: wp_number must be numeric or None")
+                return False
+            
+            if "wp_distance" in autonomous_data and not isinstance(autonomous_data["wp_distance"], (int, float, type(None))):
+                print("Invalid autonomous data: wp_distance must be numeric or None")
+                return False
+            
+            if "compass_err" in autonomous_data and not isinstance(autonomous_data["compass_err"], (int, float, type(None))):
+                print("Invalid autonomous data: compass_err must be numeric or None")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error validating autonomous data: {e}")
+            return False
+    
     def start_listeners(self):
         """Start Firebase listeners for real-time updates"""
         try:
@@ -198,17 +247,25 @@ class FirebaseControl:
             print(f"Error handling joystick update: {e}")
     
     def on_autonomous_data_update(self, message):
-        """Handle autonomous data updates from Firebase"""
+        """Handle autonomous data updates from Firebase with enhanced validation"""
         try:
             if message['event'] == 'put':
                 data = message['data']
                 if data:
-                    self.autonomous_data.update(data)
-                    if self.on_autonomous_update:
-                        Clock.schedule_once(lambda dt: self.on_autonomous_update(data))
-                    print(f"Autonomous data updated: {data}")
+                    # Validate the autonomous data before processing
+                    if self.validate_autonomous_data(data):
+                        self.autonomous_data.update(data)
+                        if self.on_autonomous_update:
+                            Clock.schedule_once(lambda dt: self.on_autonomous_update(data))
+                        print(f"Autonomous data updated: {data}")
+                    else:
+                        print(f"Invalid autonomous data received, ignoring: {data}")
+                else:
+                    print("Empty autonomous data received")
         except Exception as e:
             print(f"Error handling autonomous update: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_system_status_update(self, message):
         """Handle system status updates from Firebase"""
@@ -245,14 +302,29 @@ class FirebaseControl:
             return False
     
     def send_autonomous_command(self, command_data):
-        """Send autonomous command to Firebase"""
+        """Send autonomous command to Firebase with enhanced validation"""
         try:
             if self.control_mode == "internet" and self.is_connected:
-                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
-                self.db.child(*autonomous_path).set(command_data)
-                print(f"Sent autonomous command to Firebase: {command_data}")
+                # Validate the command data before sending
+                if self.validate_autonomous_data(command_data):
+                    autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                    self.db.child(*autonomous_path).set(command_data)
+                    print(f"Sent autonomous command to Firebase: {command_data}")
+                    return True
+                else:
+                    print(f"Invalid autonomous command data, not sending: {command_data}")
+                    return False
+            else:
+                if self.control_mode != "internet":
+                    print(f"Not in internet mode (current mode: {self.control_mode})")
+                elif not self.is_connected:
+                    print("Firebase not connected")
+                return False
         except Exception as e:
             print(f"Error sending autonomous command: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def update_system_status(self):
         """Update system status in Firebase"""

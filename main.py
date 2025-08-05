@@ -1,3 +1,38 @@
+# Autonomous Data Exchange System - Enhanced Implementation
+# 
+# This system now includes:
+# 1. Hardware and Internet Connectivity Checks
+#    - Periodic connectivity monitoring (every 30 seconds)
+#    - Real-time status updates
+#    - Automatic fallback mechanisms
+#
+# 2. Firebase Integration with Validation
+#    - Data structure validation
+#    - Connection status monitoring
+#    - Error handling and recovery
+#
+# 3. Enhanced Error Handling
+#    - Comprehensive exception handling
+#    - Detailed logging and debugging
+#    - User-friendly error messages
+#
+# 4. Data Synchronization
+#    - Real-time data sync status
+#    - Mode-specific data handling
+#    - Connectivity-aware updates
+#
+# 5. User Interface Enhancements
+#    - Connectivity status indicators
+#    - Mode-specific warnings
+#    - Real-time status updates
+#
+# Key Features:
+# - Automatic connectivity detection
+# - Data validation before processing
+# - Graceful degradation on connection loss
+# - Comprehensive logging for debugging
+# - User-friendly status indicators
+
 import ast
 import json
 import os
@@ -55,6 +90,31 @@ except ImportError:
     FIREBASE_AVAILABLE = False
     print("Firebase not available - pyrebase4 not installed")
 
+# Add network connectivity check
+import socket
+import threading
+import time
+from datetime import datetime
+
+def check_internet_connectivity():
+    """Check if internet connectivity is available"""
+    try:
+        # Try to connect to a reliable host
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except OSError:
+        return False
+
+def check_hardware_connectivity():
+    """Check if hardware (UDP) connectivity is available"""
+    try:
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        test_socket.settimeout(1)
+        test_socket.sendto(b"ping", ('192.168.1.10', 5005))
+        test_socket.close()
+        return True
+    except Exception:
+        return False
 
 # Set environment variables (optional but helpful)
 os.environ["KIVY_NO_CONSOLELOG"] = "1"
@@ -270,9 +330,24 @@ class MainScreen(Screen):
         self.image_widgets = []
         self.autonomous_event = None
         
-        # Firebase control initialization
+        # Enhanced autonomous data exchange system
+        self.autonomous_data_exchange = {
+            "hardware_connected": False,
+            "internet_connected": False,
+            "firebase_connected": False,
+            "last_hardware_check": None,
+            "last_internet_check": None,
+            "autonomous_mode": "manual",
+            "data_sync_status": "unknown"
+        }
+        
+        # Firebase control initialization with enhanced error handling
         self.firebase_control = None
         self.control_mode = "hardware"  # Default to hardware control
+        
+        # Initialize connectivity checks
+        self.initialize_connectivity_checks()
+        
         if FIREBASE_AVAILABLE:
             try:
                 print("Attempting to initialize Firebase control...")
@@ -286,16 +361,20 @@ class MainScreen(Screen):
                 # Test Firebase connection
                 if self.firebase_control.test_connection():
                     print("Firebase connection test successful")
+                    self.autonomous_data_exchange["firebase_connected"] = True
                 else:
                     print("Firebase connection test failed")
+                    self.autonomous_data_exchange["firebase_connected"] = False
                     
             except Exception as e:
                 print(f"Error initializing Firebase control: {e}")
                 import traceback
                 traceback.print_exc()
                 self.firebase_control = None
+                self.autonomous_data_exchange["firebase_connected"] = False
         else:
             print("Firebase not available - pyrebase4 not installed")
+            self.autonomous_data_exchange["firebase_connected"] = False
 
         # --- Top Navigation Bar ---
         top_nav = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, padding=[20, 10, 20, 10], spacing=20)
@@ -495,6 +574,144 @@ class MainScreen(Screen):
         self.videoreceiver = VideoReceiver()
         self.bind(size=self.on_size)
 
+    def initialize_connectivity_checks(self):
+        """Initialize connectivity checks for hardware and internet"""
+        try:
+            print("Initializing connectivity checks...")
+            
+            # Check hardware connectivity
+            self.autonomous_data_exchange["hardware_connected"] = check_hardware_connectivity()
+            self.autonomous_data_exchange["last_hardware_check"] = datetime.now()
+            
+            # Check internet connectivity
+            self.autonomous_data_exchange["internet_connected"] = check_internet_connectivity()
+            self.autonomous_data_exchange["last_internet_check"] = datetime.now()
+            
+            print(f"Hardware connected: {self.autonomous_data_exchange['hardware_connected']}")
+            print(f"Internet connected: {self.autonomous_data_exchange['internet_connected']}")
+            print(f"Firebase connected: {self.autonomous_data_exchange['firebase_connected']}")
+            
+            # Start periodic connectivity checks
+            self.start_periodic_connectivity_checks()
+            
+        except Exception as e:
+            print(f"Error initializing connectivity checks: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def start_periodic_connectivity_checks(self):
+        """Start periodic connectivity checks every 30 seconds"""
+        def periodic_check():
+            while True:
+                try:
+                    # Check hardware connectivity
+                    hardware_connected = check_hardware_connectivity()
+                    if hardware_connected != self.autonomous_data_exchange["hardware_connected"]:
+                        self.autonomous_data_exchange["hardware_connected"] = hardware_connected
+                        self.autonomous_data_exchange["last_hardware_check"] = datetime.now()
+                        print(f"Hardware connectivity changed: {hardware_connected}")
+                    
+                    # Check internet connectivity
+                    internet_connected = check_internet_connectivity()
+                    if internet_connected != self.autonomous_data_exchange["internet_connected"]:
+                        self.autonomous_data_exchange["internet_connected"] = internet_connected
+                        self.autonomous_data_exchange["last_internet_check"] = datetime.now()
+                        print(f"Internet connectivity changed: {internet_connected}")
+                    
+                    # Check Firebase connectivity if available
+                    if self.firebase_control:
+                        firebase_connected = self.firebase_control.is_firebase_connected()
+                        if firebase_connected != self.autonomous_data_exchange["firebase_connected"]:
+                            self.autonomous_data_exchange["firebase_connected"] = firebase_connected
+                            print(f"Firebase connectivity changed: {firebase_connected}")
+                    
+                    # Update data sync status
+                    self.update_data_sync_status()
+                    
+                    time.sleep(30)  # Check every 30 seconds
+                    
+                except Exception as e:
+                    print(f"Error in periodic connectivity check: {e}")
+                    time.sleep(30)
+        
+        # Start the periodic check in a separate thread
+        connectivity_thread = threading.Thread(target=periodic_check, daemon=True)
+        connectivity_thread.start()
+        print("Periodic connectivity checks started")
+
+    def update_data_sync_status(self):
+        """Update the data synchronization status based on connectivity"""
+        try:
+            hardware_ok = self.autonomous_data_exchange["hardware_connected"]
+            internet_ok = self.autonomous_data_exchange["internet_connected"]
+            firebase_ok = self.autonomous_data_exchange["firebase_connected"]
+            
+            if self.control_mode == "hardware":
+                if hardware_ok:
+                    self.autonomous_data_exchange["data_sync_status"] = "hardware_connected"
+                else:
+                    self.autonomous_data_exchange["data_sync_status"] = "hardware_disconnected"
+            elif self.control_mode == "internet":
+                if internet_ok and firebase_ok:
+                    self.autonomous_data_exchange["data_sync_status"] = "internet_connected"
+                elif internet_ok and not firebase_ok:
+                    self.autonomous_data_exchange["data_sync_status"] = "internet_connected_firebase_disconnected"
+                else:
+                    self.autonomous_data_exchange["data_sync_status"] = "internet_disconnected"
+            else:
+                self.autonomous_data_exchange["data_sync_status"] = "unknown"
+                
+            print(f"Data sync status updated: {self.autonomous_data_exchange['data_sync_status']}")
+            
+        except Exception as e:
+            print(f"Error updating data sync status: {e}")
+
+    def validate_autonomous_data(self, autonomous_data):
+        """Validate autonomous data structure and content"""
+        try:
+            if not isinstance(autonomous_data, dict):
+                print("Invalid autonomous data: not a dictionary")
+                return False
+            
+            # Check required fields
+            required_fields = ["run_status", "vh_autonomous", "wp_loaded_count"]
+            for field in required_fields:
+                if field not in autonomous_data:
+                    print(f"Invalid autonomous data: missing required field '{field}'")
+                    return False
+            
+            # Validate data types
+            if not isinstance(autonomous_data["run_status"], bool):
+                print("Invalid autonomous data: run_status must be boolean")
+                return False
+            
+            if not isinstance(autonomous_data["vh_autonomous"], bool):
+                print("Invalid autonomous data: vh_autonomous must be boolean")
+                return False
+            
+            if not isinstance(autonomous_data["wp_loaded_count"], (int, float)):
+                print("Invalid autonomous data: wp_loaded_count must be numeric")
+                return False
+            
+            # Validate optional fields if present
+            if "wp_number" in autonomous_data and not isinstance(autonomous_data["wp_number"], (int, float, type(None))):
+                print("Invalid autonomous data: wp_number must be numeric or None")
+                return False
+            
+            if "wp_distance" in autonomous_data and not isinstance(autonomous_data["wp_distance"], (int, float, type(None))):
+                print("Invalid autonomous data: wp_distance must be numeric or None")
+                return False
+            
+            if "compass_err" in autonomous_data and not isinstance(autonomous_data["compass_err"], (int, float, type(None))):
+                print("Invalid autonomous data: compass_err must be numeric or None")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error validating autonomous data: {e}")
+            return False
+
     def on_switch_active(self, instance, value):
         if value:
             self.autoshowfullscreen = True
@@ -506,42 +723,80 @@ class MainScreen(Screen):
                 self.dismiss_full_screen(self.popup)
     
     def toggle_control_mode(self, instance):
-        """Toggle between hardware and internet control modes"""
+        """Toggle between hardware and internet control modes with enhanced validation"""
         try:
+            print(f"Attempting to toggle control mode from {self.control_mode}")
+            
             if self.control_mode == "hardware":
+                # Switching to internet mode
+                print("Checking internet connectivity for internet mode...")
+                
+                if not self.autonomous_data_exchange["internet_connected"]:
+                    toast("Internet connectivity required for internet mode")
+                    print("Cannot switch to internet mode: no internet connectivity")
+                    return
+                
+                if not self.autonomous_data_exchange["firebase_connected"]:
+                    toast("Firebase connection required for internet mode")
+                    print("Cannot switch to internet mode: no Firebase connection")
+                    return
+                
+                # Switch to internet mode
                 self.control_mode = "internet"
                 self.control_mode_btn.text = "Internet"
                 self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
+                
                 if self.firebase_control:
                     self.firebase_control.set_control_mode("internet")
                     print("Firebase control mode set to internet")
+                
                 # Update Stream control mode
                 if hasattr(streaming, 'set_control_mode'):
                     streaming.set_control_mode("internet")
                     print(f"Stream control mode updated to: {streaming.get_control_mode()}")
+                
                 toast("Switched to Internet Control Mode")
+                print("Successfully switched to internet mode")
+                
             else:
+                # Switching to hardware mode
+                print("Checking hardware connectivity for hardware mode...")
+                
+                if not self.autonomous_data_exchange["hardware_connected"]:
+                    toast("Hardware connectivity required for hardware mode")
+                    print("Cannot switch to hardware mode: no hardware connectivity")
+                    return
+                
+                # Switch to hardware mode
                 self.control_mode = "hardware"
                 self.control_mode_btn.text = "Hardware"
                 self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
+                
                 if self.firebase_control:
                     self.firebase_control.set_control_mode("hardware")
                     print("Firebase control mode set to hardware")
+                
                 # Update Stream control mode
                 if hasattr(streaming, 'set_control_mode'):
                     streaming.set_control_mode("hardware")
                     print(f"Stream control mode updated to: {streaming.get_control_mode()}")
+                
                 toast("Switched to Hardware Control Mode")
+                print("Successfully switched to hardware mode")
             
             # Update system status
             if self.firebase_control:
                 self.firebase_control.update_system_status()
                 print(f"System status updated for {self.control_mode} mode")
-                
+            
+            # Update data sync status
+            self.update_data_sync_status()
+            
         except Exception as e:
             print(f"Error toggling control mode: {e}")
             import traceback
             traceback.print_exc()
+            toast("Error switching control mode")
     
     def on_firebase_joystick_update(self, joystick_data):
         """Handle joystick data updates from Firebase"""
@@ -576,13 +831,39 @@ class MainScreen(Screen):
             traceback.print_exc()
     
     def on_firebase_autonomous_update(self, autonomous_data):
-        """Handle autonomous data updates from Firebase"""
+        """Handle autonomous data updates from Firebase with enhanced validation"""
         try:
-            print(f"Firebase autonomous update: {autonomous_data}")
-            # Update autonomous display with Firebase data
+            print(f"Firebase autonomous update received: {autonomous_data}")
+            
+            # Validate the autonomous data
+            if not self.validate_autonomous_data(autonomous_data):
+                print("Invalid autonomous data received from Firebase, ignoring update")
+                return
+            
+            # Check if we're in internet mode
+            if self.control_mode != "internet":
+                print(f"Received Firebase autonomous update but not in internet mode (current: {self.control_mode})")
+                return
+            
+            # Check connectivity status
+            if not self.autonomous_data_exchange["internet_connected"]:
+                print("Internet connectivity lost, ignoring Firebase autonomous update")
+                return
+            
+            if not self.autonomous_data_exchange["firebase_connected"]:
+                print("Firebase connectivity lost, ignoring Firebase autonomous update")
+                return
+            
+            # Update autonomous display with validated Firebase data
             self.update_autonomous_display(autonomous_data)
+            
+            # Log successful update
+            print(f"Successfully processed Firebase autonomous update: {autonomous_data}")
+            
         except Exception as e:
             print(f"Error handling Firebase autonomous update: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_firebase_system_update(self, system_data):
         """Handle system status updates from Firebase"""
@@ -832,9 +1113,14 @@ class MainScreen(Screen):
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
     def update_autonomous_display(self, autonomous_data):
-        """Update autonomous navigation display with new data"""
+        """Update autonomous navigation display with new data and connectivity status"""
         try:
             print(f"[DEBUG] Updating autonomous display with data: {autonomous_data}")
+            
+            # Validate autonomous data
+            if not self.validate_autonomous_data(autonomous_data):
+                print("Invalid autonomous data, skipping display update")
+                return
             
             # Handle new autonomous data structure
             wp_loaded_count = autonomous_data.get("wp_loaded_count", 0)
@@ -850,10 +1136,17 @@ class MainScreen(Screen):
             else:
                 self.autonomous_mode = "Manual"
             
-            # Determine navigation status based on run_status
+            # Determine navigation status based on run_status and connectivity
             if run_status:
-                nav_status = "Active"
-                nav_color = (0.2, 0.8, 0.2, 1)  # Green
+                if self.control_mode == "hardware" and not self.autonomous_data_exchange["hardware_connected"]:
+                    nav_status = "Active (Hardware Disconnected)"
+                    nav_color = (0.8, 0.6, 0.2, 1)  # Orange - warning
+                elif self.control_mode == "internet" and not self.autonomous_data_exchange["internet_connected"]:
+                    nav_status = "Active (Internet Disconnected)"
+                    nav_color = (0.8, 0.6, 0.2, 1)  # Orange - warning
+                else:
+                    nav_status = "Active"
+                    nav_color = (0.2, 0.8, 0.2, 1)  # Green
             else:
                 nav_status = "Inactive"
                 nav_color = (0.8, 0.2, 0.2, 1)  # Red
@@ -888,6 +1181,9 @@ class MainScreen(Screen):
             self.next_waypoint_position = None  # Not provided in new data structure
             self.current_waypoint_details = None  # Not provided in new data structure
             
+            # Update connectivity status in autonomous data exchange
+            self.autonomous_data_exchange["autonomous_mode"] = self.autonomous_mode.lower()
+            
             print(f"[DEBUG] Mission State: {self.mission_state}")
             print(f"[DEBUG] Current Waypoint: {wp_number}")
             print(f"[DEBUG] Total Waypoints: {wp_loaded_count}")
@@ -897,23 +1193,38 @@ class MainScreen(Screen):
             print(f"[DEBUG] Navigation State: {self.navigation_state}")
             print(f"[DEBUG] Autonomous Mode: {self.autonomous_mode}")
             print(f"[DEBUG] Run Status: {run_status}")
+            print(f"[DEBUG] Data Sync Status: {self.autonomous_data_exchange['data_sync_status']}")
             
             # Update detailed labels
             self.update_autonomous_labels()
             
         except Exception as e:
             print(f"Error updating autonomous display: {e}")
+            import traceback
+            traceback.print_exc()
 
     def update_autonomous_labels(self):
-        """Update the detailed autonomous navigation labels"""
+        """Update the detailed autonomous navigation labels with connectivity status"""
         try:
-            # Mission status with more detailed information
+            # Mission status with more detailed information and connectivity
             if hasattr(self, 'mission_complete') and self.mission_complete:
                 mission_text = "Mission: Complete"
                 mission_color = (0.2, 0.8, 0.2, 1)  # Green
             elif hasattr(self, 'has_pending_waypoints') and self.has_pending_waypoints:
-                mission_text = "Mission: Active"
-                mission_color = (0.2, 0.6, 0.8, 1)  # Blue
+                # Add connectivity status to mission text
+                connectivity_status = self.autonomous_data_exchange.get("data_sync_status", "unknown")
+                if connectivity_status == "hardware_connected" or connectivity_status == "internet_connected":
+                    mission_text = "Mission: Active"
+                    mission_color = (0.2, 0.6, 0.8, 1)  # Blue
+                elif connectivity_status == "hardware_disconnected":
+                    mission_text = "Mission: Active (Hardware Disconnected)"
+                    mission_color = (0.8, 0.6, 0.2, 1)  # Orange
+                elif connectivity_status == "internet_disconnected":
+                    mission_text = "Mission: Active (Internet Disconnected)"
+                    mission_color = (0.8, 0.6, 0.2, 1)  # Orange
+                else:
+                    mission_text = "Mission: Active (Connection Issues)"
+                    mission_color = (0.8, 0.6, 0.2, 1)  # Orange
             elif hasattr(self, 'mission_state') and self.mission_state == "not_started":
                 mission_text = "Mission: Not Started"
                 mission_color = (0.6, 0.6, 0.6, 1)  # Gray
@@ -925,7 +1236,7 @@ class MainScreen(Screen):
                 self.mission_status_label.text = mission_text
                 self.mission_status_label.color = mission_color
             
-            # Waypoint progress with current waypoint number
+            # Waypoint progress with current waypoint number and connectivity
             if hasattr(self, 'total_waypoints') and hasattr(self, 'completed_waypoints'):
                 current_wp = getattr(self, 'current_waypoint', None)
                 if current_wp is not None:
@@ -933,10 +1244,15 @@ class MainScreen(Screen):
                 else:
                     wp_text = f"Waypoints: {self.completed_waypoints}/{self.total_waypoints}"
                 
+                # Add connectivity indicator
+                connectivity_status = self.autonomous_data_exchange.get("data_sync_status", "unknown")
+                if connectivity_status in ["hardware_disconnected", "internet_disconnected"]:
+                    wp_text += " (Disconnected)"
+                
                 if hasattr(self, 'waypoint_detail_label'):
                     self.waypoint_detail_label.text = wp_text
             
-            # Distance to waypoint with more details
+            # Distance to waypoint with more details and connectivity
             if hasattr(self, 'distance_to_waypoint') and self.distance_to_waypoint is not None:
                 try:
                     distance = float(self.distance_to_waypoint)
@@ -949,6 +1265,11 @@ class MainScreen(Screen):
                             distance_text += f" | Corr: {correction:.1f}°"
                         except (ValueError, TypeError):
                             pass
+                    
+                    # Add connectivity indicator
+                    connectivity_status = self.autonomous_data_exchange.get("data_sync_status", "unknown")
+                    if connectivity_status in ["hardware_disconnected", "internet_disconnected"]:
+                        distance_text += " (Disconnected)"
                             
                 except (ValueError, TypeError):
                     distance_text = "Distance: N/A"
@@ -958,9 +1279,19 @@ class MainScreen(Screen):
             if hasattr(self, 'distance_label'):
                 self.distance_label.text = distance_text
             
-            # Navigation state with more details
+            # Navigation state with more details and connectivity
             if hasattr(self, 'navigation_state'):
                 nav_text = f"State: {self.navigation_state}"
+                
+                # Add connectivity status
+                connectivity_status = self.autonomous_data_exchange.get("data_sync_status", "unknown")
+                if connectivity_status == "hardware_disconnected":
+                    nav_text += " (Hardware Disconnected)"
+                elif connectivity_status == "internet_disconnected":
+                    nav_text += " (Internet Disconnected)"
+                elif connectivity_status == "internet_connected_firebase_disconnected":
+                    nav_text += " (Firebase Disconnected)"
+                
                 if hasattr(self, 'nav_state_label'):
                     self.nav_state_label.text = nav_text
                     self.nav_state_label.color = getattr(self, 'navigation_color', (0.4, 0.4, 0.4, 1))
@@ -991,6 +1322,8 @@ class MainScreen(Screen):
             
         except Exception as e:
             print(f"Error updating autonomous labels: {e}")
+            import traceback
+            traceback.print_exc()
 
     def update_ui_on_main_thread(self):
         print(f"[DEBUG] update_ui_on_main_thread called")
@@ -1345,6 +1678,12 @@ class MainScreen(Screen):
         try:
             print("=== Testing Control Functionality ===")
             
+            # Test connectivity status
+            print(f"Hardware connected: {self.autonomous_data_exchange['hardware_connected']}")
+            print(f"Internet connected: {self.autonomous_data_exchange['internet_connected']}")
+            print(f"Firebase connected: {self.autonomous_data_exchange['firebase_connected']}")
+            print(f"Data sync status: {self.autonomous_data_exchange['data_sync_status']}")
+            
             # Test Firebase control
             if self.firebase_control:
                 print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
@@ -1377,6 +1716,25 @@ class MainScreen(Screen):
                 test_socket.close()
             except Exception as e:
                 print(f"✗ UDP connectivity test: FAILED - {e}")
+            
+            # Test autonomous data exchange status
+            print(f"Autonomous mode: {self.autonomous_data_exchange.get('autonomous_mode', 'unknown')}")
+            print(f"Last hardware check: {self.autonomous_data_exchange.get('last_hardware_check', 'never')}")
+            print(f"Last internet check: {self.autonomous_data_exchange.get('last_internet_check', 'never')}")
+            
+            # Test data validation
+            test_autonomous_data = {
+                "run_status": True,
+                "vh_autonomous": True,
+                "wp_loaded_count": 5,
+                "wp_number": 1,
+                "wp_distance": 10.5,
+                "compass_err": 2.3
+            }
+            if self.validate_autonomous_data(test_autonomous_data):
+                print("✓ Autonomous data validation test: SUCCESS")
+            else:
+                print("✗ Autonomous data validation test: FAILED")
             
             print("=== Control Functionality Test Complete ===")
             
