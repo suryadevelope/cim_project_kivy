@@ -673,7 +673,38 @@ class MainScreen(Screen):
                 print("Invalid autonomous data: not a dictionary")
                 return False
             
-            # Check required fields
+            # Check if this is mission data (has mission field)
+            if "mission" in autonomous_data:
+                # This is mission data
+                if not isinstance(autonomous_data["mission"], list):
+                    print("Invalid mission data: mission must be a list")
+                    return False
+                
+                # Validate mission points
+                for i, point in enumerate(autonomous_data["mission"]):
+                    if not isinstance(point, (list, tuple)) or len(point) < 2:
+                        print(f"Invalid mission point {i}: must be list/tuple with at least 2 coordinates")
+                        return False
+                    try:
+                        lat = float(point[0])
+                        lon = float(point[1])
+                        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                            print(f"Invalid mission point {i}: coordinates out of range")
+                            return False
+                    except (ValueError, TypeError):
+                        print(f"Invalid mission point {i}: coordinates must be numeric")
+                        return False
+                
+                # Validate status field
+                if "status" in autonomous_data:
+                    status = autonomous_data["status"]
+                    if not isinstance(status, str) or status not in ["start", "stop", "pause"]:
+                        print("Invalid mission data: status must be 'start', 'stop', or 'pause'")
+                        return False
+                
+                return True
+            
+            # Check required fields for autonomous command data
             required_fields = ["run_status", "vh_autonomous", "wp_loaded_count"]
             for field in required_fields:
                 if field not in autonomous_data:
@@ -854,8 +885,14 @@ class MainScreen(Screen):
                 print("Firebase connectivity lost, ignoring Firebase autonomous update")
                 return
             
-            # Update autonomous display with validated Firebase data
-            self.update_autonomous_display(autonomous_data)
+            # Handle mission data
+            if "mission" in autonomous_data:
+                print(f"Processing mission data from Firebase: {len(autonomous_data['mission'])} waypoints")
+                self.handle_mission_data_from_firebase(autonomous_data)
+            else:
+                # Handle autonomous command data
+                print("Processing autonomous command data from Firebase")
+                self.update_autonomous_display(autonomous_data)
             
             # Log successful update
             print(f"Successfully processed Firebase autonomous update: {autonomous_data}")
@@ -865,6 +902,75 @@ class MainScreen(Screen):
             import traceback
             traceback.print_exc()
     
+    def handle_mission_data_from_firebase(self, mission_data):
+        """Handle mission data received from Firebase"""
+        try:
+            mission_points = mission_data.get("mission", [])
+            status = mission_data.get("status", "stop")
+            
+            print(f"Handling mission data: {len(mission_points)} waypoints, status: {status}")
+            
+            # Update the mission points in MapPlotScreen if available
+            app = App.get_running_app()
+            if hasattr(app, 'root') and app.root is not None:
+                try:
+                    mapplot_screen = app.root.get_screen('mapplot')
+                    if hasattr(mapplot_screen, 'user_markers'):
+                        # Clear existing markers
+                        for marker, _ in mapplot_screen.user_markers[:]:
+                            try:
+                                mapplot_screen.mapview.remove_marker(marker)
+                            except Exception as e:
+                                print(f"Warning: Could not remove marker: {e}")
+                        mapplot_screen.user_markers.clear()
+                        
+                        # Add new mission points as markers
+                        for i, point in enumerate(mission_points):
+                            try:
+                                lat, lon = point[0], point[1]
+                                marker = MapMarker(lat=lat, lon=lon)
+                                mapplot_screen.mapview.add_marker(marker)
+                                mapplot_screen.user_markers.append((marker, (lat, lon)))
+                                print(f"Added mission point {i+1}: ({lat}, {lon})")
+                            except Exception as e:
+                                print(f"Error adding mission point {i+1}: {e}")
+                        
+                        # Update path line
+                        if hasattr(mapplot_screen, 'update_path_line'):
+                            mapplot_screen.update_path_line()
+                        
+                        print(f"Successfully updated mission with {len(mission_points)} waypoints")
+                        
+                except Exception as e:
+                    print(f"Error updating MapPlotScreen with mission data: {e}")
+            
+            # Update autonomous status
+            if status == "start":
+                self.last_status = "start"
+                if not self.autonomous_event:
+                    self.start_autonomous_mission_sender()
+                print("Mission started from Firebase")
+            elif status == "stop":
+                self.last_status = "stop"
+                if self.autonomous_event:
+                    self.stop_autonomous_mission_sender()
+                print("Mission stopped from Firebase")
+            elif status == "pause":
+                self.last_status = "pause"
+                print("Mission paused from Firebase")
+            
+            # Update UI to reflect mission status
+            self.update_autonomous_display({
+                "run_status": status == "start",
+                "vh_autonomous": status == "start",
+                "wp_loaded_count": len(mission_points)
+            })
+            
+        except Exception as e:
+            print(f"Error handling mission data from Firebase: {e}")
+            import traceback
+            traceback.print_exc()
+
     def on_firebase_system_update(self, system_data):
         """Handle system status updates from Firebase"""
         try:
@@ -1640,19 +1746,36 @@ class MainScreen(Screen):
                 pass
         status = self.last_status if hasattr(self, 'last_status') else 'stop'
         data = json.dumps({"mission": mission_points, "status": status})
-        import socket
-        from kivy.clock import Clock
-        from kivymd.toast import toast
-        host = '192.168.1.10'
-        port = 5005
-        def send(data, host, port):
+        
+        # Send via UDP (hardware mode)
+        if self.control_mode == "hardware":
+            import socket
+            from kivy.clock import Clock
+            from kivymd.toast import toast
+            host = '192.168.1.10'
+            port = 5005
+            def send(data, host, port):
+                try:
+                    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    udp_socket.sendto(data.encode('utf-8'), (host, port))
+                    udp_socket.close()
+                except Exception as e:
+                    print(f"Autonomous mission send error: {e}")
+            threading.Thread(target=send, args=(data, host, port), daemon=True).start()
+        
+        # Send via Firebase (internet mode)
+        elif self.control_mode == "internet" and self.firebase_control:
             try:
-                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                udp_socket.sendto(data.encode('utf-8'), (host, port))
-                udp_socket.close()
+                mission_data = {"mission": mission_points, "status": status}
+                success = self.firebase_control.send_autonomous_mission(mission_data)
+                if success:
+                    print(f"Successfully sent autonomous mission to Firebase: {len(mission_points)} waypoints")
+                else:
+                    print("Failed to send autonomous mission to Firebase")
             except Exception as e:
-                print(f"Autonomous mission send error: {e}")
-        threading.Thread(target=send, args=(data, host, port), daemon=True).start()
+                print(f"Error sending autonomous mission to Firebase: {e}")
+                import traceback
+                traceback.print_exc()
 
     def send_status_udp(self, status):
         import socket
@@ -2013,7 +2136,8 @@ class MapPlotScreen(Screen):
             Clock.schedule_once(lambda dt: toast("No mission points to send!"))
             return
         mission_data = json.dumps({"mission": mission_points, "status": last_status})
-        # Send mission_data to remote device (simple socket client)
+        
+        # Send mission_data to remote device based on control mode
         def send_mission(data, host='192.168.1.10', port=5005):
             import socket
             from kivy.clock import Clock
@@ -2026,7 +2150,39 @@ class MapPlotScreen(Screen):
             except Exception as e:
                 print(f"Mission send error: {e}")
                 Clock.schedule_once(lambda dt: toast(f"Mission send failed"))
-        threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
+        
+        # Send via UDP (hardware mode)
+        if hasattr(app, 'root') and app.root is not None:
+            try:
+                main_screen = app.root.get_screen('main')
+                if hasattr(main_screen, 'control_mode') and main_screen.control_mode == "hardware":
+                    threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
+                elif hasattr(main_screen, 'control_mode') and main_screen.control_mode == "internet" and hasattr(main_screen, 'firebase_control') and main_screen.firebase_control:
+                    # Send via Firebase (internet mode)
+                    try:
+                        mission_data_dict = {"mission": mission_points, "status": last_status}
+                        success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
+                        if success:
+                            Clock.schedule_once(lambda dt: toast("Mission sent successfully to Firebase!"))
+                            print(f"Successfully sent mission to Firebase: {len(mission_points)} waypoints")
+                        else:
+                            Clock.schedule_once(lambda dt: toast("Failed to send mission to Firebase"))
+                            print("Failed to send mission to Firebase")
+                    except Exception as e:
+                        print(f"Error sending mission to Firebase: {e}")
+                        Clock.schedule_once(lambda dt: toast(f"Mission send to Firebase failed"))
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    # Fallback to UDP if control mode is not properly set
+                    threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
+            except Exception as e:
+                print(f"Error determining control mode: {e}")
+                # Fallback to UDP
+                threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
+        else:
+            # Fallback to UDP if main screen not available
+            threading.Thread(target=send_mission, args=(mission_data,), daemon=True).start()
 
     def on_satellite_toggle_mapplot(self, instance, state):
         """Toggle between regular and satellite map view for MapPlotScreen"""

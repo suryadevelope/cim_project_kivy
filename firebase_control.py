@@ -326,6 +326,59 @@ class FirebaseControl:
             traceback.print_exc()
             return False
     
+    def send_autonomous_mission(self, mission_data):
+        """Send autonomous mission data to Firebase with enhanced validation"""
+        try:
+            if self.control_mode == "internet" and self.is_connected:
+                # Validate the mission data structure
+                if isinstance(mission_data, dict) and "mission" in mission_data and "status" in mission_data:
+                    # Validate mission points
+                    mission_points = mission_data.get("mission", [])
+                    if isinstance(mission_points, list):
+                        # Validate each mission point
+                        valid_points = []
+                        for point in mission_points:
+                            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                                # Ensure coordinates are numeric
+                                try:
+                                    lat = float(point[0])
+                                    lon = float(point[1])
+                                    valid_points.append([lat, lon])
+                                except (ValueError, TypeError):
+                                    print(f"Invalid mission point coordinates: {point}")
+                                    continue
+                        
+                        # Create validated mission data
+                        validated_mission_data = {
+                            "mission": valid_points,
+                            "status": mission_data.get("status", "stop"),
+                            "timestamp": time.time(),
+                            "mission_count": len(valid_points)
+                        }
+                        
+                        # Send to Firebase
+                        autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                        self.db.child(*autonomous_path).set(validated_mission_data)
+                        print(f"Sent autonomous mission to Firebase: {validated_mission_data}")
+                        return True
+                    else:
+                        print(f"Invalid mission points format: {mission_points}")
+                        return False
+                else:
+                    print(f"Invalid mission data structure: {mission_data}")
+                    return False
+            else:
+                if self.control_mode != "internet":
+                    print(f"Not in internet mode (current mode: {self.control_mode})")
+                elif not self.is_connected:
+                    print("Firebase not connected")
+                return False
+        except Exception as e:
+            print(f"Error sending autonomous mission: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def update_system_status(self):
         """Update system status in Firebase"""
         try:
