@@ -275,14 +275,24 @@ class MainScreen(Screen):
         self.control_mode = "hardware"  # Default to hardware control
         if FIREBASE_AVAILABLE:
             try:
+                print("Attempting to initialize Firebase control...")
                 self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
                 # Set up callbacks
                 self.firebase_control.on_joystick_update = self.on_firebase_joystick_update
                 self.firebase_control.on_autonomous_update = self.on_firebase_autonomous_update
                 self.firebase_control.on_system_update = self.on_firebase_system_update
                 print("Firebase control initialized successfully")
+                
+                # Test Firebase connection
+                if self.firebase_control.test_connection():
+                    print("Firebase connection test successful")
+                else:
+                    print("Firebase connection test failed")
+                    
             except Exception as e:
                 print(f"Error initializing Firebase control: {e}")
+                import traceback
+                traceback.print_exc()
                 self.firebase_control = None
         else:
             print("Firebase not available - pyrebase4 not installed")
@@ -497,32 +507,41 @@ class MainScreen(Screen):
     
     def toggle_control_mode(self, instance):
         """Toggle between hardware and internet control modes"""
-        if self.control_mode == "hardware":
-            self.control_mode = "internet"
-            self.control_mode_btn.text = "Internet"
-            self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
+        try:
+            if self.control_mode == "hardware":
+                self.control_mode = "internet"
+                self.control_mode_btn.text = "Internet"
+                self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
+                if self.firebase_control:
+                    self.firebase_control.set_control_mode("internet")
+                    print("Firebase control mode set to internet")
+                # Update Stream control mode
+                if hasattr(streaming, 'set_control_mode'):
+                    streaming.set_control_mode("internet")
+                    print(f"Stream control mode updated to: {streaming.get_control_mode()}")
+                toast("Switched to Internet Control Mode")
+            else:
+                self.control_mode = "hardware"
+                self.control_mode_btn.text = "Hardware"
+                self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
+                if self.firebase_control:
+                    self.firebase_control.set_control_mode("hardware")
+                    print("Firebase control mode set to hardware")
+                # Update Stream control mode
+                if hasattr(streaming, 'set_control_mode'):
+                    streaming.set_control_mode("hardware")
+                    print(f"Stream control mode updated to: {streaming.get_control_mode()}")
+                toast("Switched to Hardware Control Mode")
+            
+            # Update system status
             if self.firebase_control:
-                self.firebase_control.set_control_mode("internet")
-            # Update Stream control mode
-            if hasattr(streaming, 'set_control_mode'):
-                streaming.set_control_mode("internet")
-                print(f"Stream control mode updated to: {streaming.get_control_mode()}")
-            toast("Switched to Internet Control Mode")
-        else:
-            self.control_mode = "hardware"
-            self.control_mode_btn.text = "Hardware"
-            self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
-            if self.firebase_control:
-                self.firebase_control.set_control_mode("hardware")
-            # Update Stream control mode
-            if hasattr(streaming, 'set_control_mode'):
-                streaming.set_control_mode("hardware")
-                print(f"Stream control mode updated to: {streaming.get_control_mode()}")
-            toast("Switched to Hardware Control Mode")
-        
-        # Update system status
-        if self.firebase_control:
-            self.firebase_control.update_system_status()
+                self.firebase_control.update_system_status()
+                print(f"System status updated for {self.control_mode} mode")
+                
+        except Exception as e:
+            print(f"Error toggling control mode: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_firebase_joystick_update(self, joystick_data):
         """Handle joystick data updates from Firebase"""
@@ -1307,6 +1326,12 @@ class MainScreen(Screen):
             if self.firebase_control:
                 print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
                 print(f"Firebase connected: {self.firebase_control.is_firebase_connected()}")
+                
+                # Test Firebase connection
+                if self.firebase_control.test_connection():
+                    print("✓ Firebase connection test: SUCCESS")
+                else:
+                    print("✗ Firebase connection test: FAILED")
             else:
                 print("Firebase control not available")
             
@@ -1325,15 +1350,17 @@ class MainScreen(Screen):
                 test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 test_socket.settimeout(1)
                 test_socket.sendto(b"test", ('192.168.1.10', 5005))
-                print("UDP connectivity test: SUCCESS")
+                print("✓ UDP connectivity test: SUCCESS")
                 test_socket.close()
             except Exception as e:
-                print(f"UDP connectivity test: FAILED - {e}")
+                print(f"✗ UDP connectivity test: FAILED - {e}")
             
             print("=== Control Functionality Test Complete ===")
             
         except Exception as e:
             print(f"Error testing control functionality: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # --- Map Plotting Screen ---

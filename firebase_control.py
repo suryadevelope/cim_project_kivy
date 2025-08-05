@@ -2,14 +2,15 @@ import json
 import threading
 import time
 from datetime import datetime
-from pyrebase import initialize_app
 from kivy.clock import Clock
 from kivy.properties import BooleanProperty, StringProperty
 
 # Import configuration
 try:
     from firebase_config import FIREBASE_CONFIG, FIREBASE_PATHS, ROVER_CONTROL_PARAMS
-except ImportError:
+    print("Firebase config imported successfully")
+except ImportError as e:
+    print(f"Error importing firebase_config: {e}")
     # Fallback configuration if config file doesn't exist
     FIREBASE_CONFIG = {
         "apiKey": "your-api-key-here",
@@ -33,6 +34,14 @@ except ImportError:
         "udp_timeout": 1.0
     }
 
+# Try to import pyrebase
+try:
+    from pyrebase import initialize_app
+    print("Pyrebase imported successfully")
+except ImportError as e:
+    print(f"Error importing pyrebase: {e}")
+    initialize_app = None
+
 class FirebaseControl:
     def __init__(self, config):
         """
@@ -41,9 +50,19 @@ class FirebaseControl:
         config: Firebase configuration dictionary
         """
         try:
+            if initialize_app is None:
+                raise ImportError("Pyrebase not available - initialize_app is None")
+            
+            print(f"Initializing Firebase with config: {config.get('projectId', 'unknown')}")
+            
+            # Initialize Firebase app
             self.firebase = initialize_app(config)
+            print("Firebase app initialized")
+            
+            # Initialize database and auth
             self.db = self.firebase.database()
             self.auth = self.firebase.auth()
+            print("Firebase database and auth initialized")
             
             # Control state
             self.control_mode = "hardware"  # "hardware" or "internet"
@@ -87,31 +106,67 @@ class FirebaseControl:
             
         except Exception as e:
             print(f"Error initializing FirebaseControl: {e}")
+            import traceback
+            traceback.print_exc()
             self.is_connected = False
             raise
     
+    def test_connection(self):
+        """Test Firebase connection by writing and reading a test value"""
+        try:
+            print("Testing Firebase connection...")
+            test_data = {
+                "test": "connection",
+                "timestamp": datetime.now().isoformat(),
+                "status": "testing"
+            }
+            test_path = FIREBASE_PATHS["system_status"].split("/")
+            
+            # Write test data
+            self.db.child(*test_path).set(test_data)
+            print("Test data written successfully")
+            
+            # Read test data back
+            result = self.db.child(*test_path).get()
+            if result.val():
+                print("Test data read successfully")
+                return True
+            else:
+                print("Failed to read test data")
+                return False
+                
+        except Exception as e:
+            print(f"Firebase connection test failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def start_listeners(self):
         """Start Firebase listeners for real-time updates"""
         try:
+            print("Starting Firebase listeners...")
+            
             # Test connection first
-            test_data = {"test": "connection"}
-            test_path = FIREBASE_PATHS["system_status"].split("/")
-            self.db.child(*test_path).set(test_data)
+            if not self.test_connection():
+                raise Exception("Firebase connection test failed")
             
             # Listen for joystick data
             joystick_path = FIREBASE_PATHS["joystick"].split("/")
+            print(f"Setting up joystick listener for path: {joystick_path}")
             self.joystick_stream = self.db.child(*joystick_path).stream(
                 self.on_joystick_data_update
             )
             
             # Listen for autonomous data
             autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+            print(f"Setting up autonomous listener for path: {autonomous_path}")
             self.autonomous_stream = self.db.child(*autonomous_path).stream(
                 self.on_autonomous_data_update
             )
             
             # Listen for system status
             system_path = FIREBASE_PATHS["system_status"].split("/")
+            print(f"Setting up system status listener for path: {system_path}")
             self.system_stream = self.db.child(*system_path).stream(
                 self.on_system_status_update
             )
@@ -122,8 +177,11 @@ class FirebaseControl:
             
         except Exception as e:
             print(f"Error starting Firebase listeners: {e}")
+            import traceback
+            traceback.print_exc()
             self.is_connected = False
             # Try to reconnect after a delay
+            print("Scheduling reconnection attempt in 5 seconds...")
             threading.Timer(5.0, self.start_listeners).start()
     
     def on_joystick_data_update(self, message):

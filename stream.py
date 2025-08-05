@@ -108,6 +108,7 @@ class Stream(EventDispatcher):
         # Initialize Firebase control if available
         if FIREBASE_AVAILABLE:
             try:
+                print("Stream: Attempting to initialize Firebase control...")
                 from firebase_config import FIREBASE_CONFIG
                 # Import FirebaseControl locally to avoid linter issues
                 try:
@@ -120,8 +121,12 @@ class Stream(EventDispatcher):
                 except Exception as e:
                     self.firebase_control = None
                     print(f"Error initializing FirebaseControl in Stream: {e}")
+                    import traceback
+                    traceback.print_exc()
             except Exception as e:
                 print(f"Error importing Firebase config in Stream: {e}")
+                import traceback
+                traceback.print_exc()
                 self.firebase_control = None
         else:
             print("Firebase not available in Stream - FIREBASE_AVAILABLE is False")
