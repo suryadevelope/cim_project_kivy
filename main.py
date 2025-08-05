@@ -519,6 +519,10 @@ class MainScreen(Screen):
                 streaming.set_control_mode("hardware")
                 print(f"Stream control mode updated to: {streaming.get_control_mode()}")
             toast("Switched to Hardware Control Mode")
+        
+        # Update system status
+        if self.firebase_control:
+            self.firebase_control.update_system_status()
     
     def on_firebase_joystick_update(self, joystick_data):
         """Handle joystick data updates from Firebase"""
@@ -537,6 +541,9 @@ class MainScreen(Screen):
                 }
                 # Send via existing UDP mechanism
                 self.send_joystick_udp(udp_data)
+                print(f"Sent Firebase joystick data via UDP: {udp_data}")
+            else:
+                print(f"Not in internet mode (current mode: {self.control_mode})")
         except Exception as e:
             print(f"Error handling Firebase joystick update: {e}")
     
@@ -1081,9 +1088,22 @@ class MainScreen(Screen):
             del self.allvideopopups[0]
 
     def on_enter(self):
-        for image_widget in self.image_widgets:
-            image_widget.bind(on_touch_down=self.on_image_touch)
-        Clock.schedule_interval(self.update_image, 1.0 / 30.0)
+        """Called when the screen is entered"""
+        try:
+            # Test control functionality for debugging
+            self.test_control_functionality()
+            
+            # Original functionality
+            for image_widget in self.image_widgets:
+                image_widget.bind(on_touch_down=self.on_image_touch)
+            Clock.schedule_interval(self.update_image, 1.0 / 30.0)
+            
+            # Start autonomous mission sender if needed
+            if hasattr(self, 'autonomous_event') and self.autonomous_event:
+                self.start_autonomous_mission_sender()
+                
+        except Exception as e:
+            print(f"Error in on_enter: {e}")
 
     def on_image_touch(self, image_widget, touch):
         if image_widget.collide_point(*touch.pos):
@@ -1277,6 +1297,43 @@ class MainScreen(Screen):
                 print(f"Status send error: {e}")
                 Clock.schedule_once(lambda dt: toast(f"Failed to send status: {status}"))
         threading.Thread(target=send, args=(data, host, port), daemon=True).start()
+
+    def test_control_functionality(self):
+        """Test the control functionality to ensure everything is working"""
+        try:
+            print("=== Testing Control Functionality ===")
+            
+            # Test Firebase control
+            if self.firebase_control:
+                print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
+                print(f"Firebase connected: {self.firebase_control.is_firebase_connected()}")
+            else:
+                print("Firebase control not available")
+            
+            # Test Stream control
+            if hasattr(streaming, 'get_control_mode'):
+                print(f"Stream control mode: {streaming.get_control_mode()}")
+            else:
+                print("Stream control mode not available")
+            
+            # Test current control mode
+            print(f"MainScreen control mode: {self.control_mode}")
+            
+            # Test UDP connectivity
+            try:
+                import socket
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                test_socket.settimeout(1)
+                test_socket.sendto(b"test", ('192.168.1.10', 5005))
+                print("UDP connectivity test: SUCCESS")
+                test_socket.close()
+            except Exception as e:
+                print(f"UDP connectivity test: FAILED - {e}")
+            
+            print("=== Control Functionality Test Complete ===")
+            
+        except Exception as e:
+            print(f"Error testing control functionality: {e}")
 
 
 # --- Map Plotting Screen ---

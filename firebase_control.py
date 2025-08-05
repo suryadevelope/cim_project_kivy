@@ -40,52 +40,64 @@ class FirebaseControl:
         
         config: Firebase configuration dictionary
         """
-        self.firebase = initialize_app(config)
-        self.db = self.firebase.database()
-        self.auth = self.firebase.auth()
-        
-        # Control state
-        self.control_mode = "hardware"  # "hardware" or "internet"
-        self.is_connected = False
-        self.last_heartbeat = None
-        
-        # Rover control data
-        self.joystick_data = {
-            "x_axis": 0.0,
-            "y_axis": 0.0,
-            "lift_speed": 0.0,
-            "clicked": False,
-            "release": False,
-            "centerliftknob": 0
-        }
-        
-        # Autonomous control data
-        self.autonomous_data = {
-            "run_status": False,
-            "vh_autonomous": False,
-            "wp_loaded_count": 0
-        }
-        
-        # System status
-        self.system_status = {
-            "control_mode": "hardware",
-            "firebase_connected": False,
-            "last_heartbeat": None,
-            "online": False,
-            "timestamp": None
-        }
-        
-        # Callbacks
-        self.on_joystick_update = None
-        self.on_autonomous_update = None
-        self.on_system_update = None
-        
-        # Start listening threads
-        self.start_listeners()
+        try:
+            self.firebase = initialize_app(config)
+            self.db = self.firebase.database()
+            self.auth = self.firebase.auth()
+            
+            # Control state
+            self.control_mode = "hardware"  # "hardware" or "internet"
+            self.is_connected = False
+            self.last_heartbeat = None
+            
+            # Rover control data
+            self.joystick_data = {
+                "x_axis": 0.0,
+                "y_axis": 0.0,
+                "lift_speed": 0.0,
+                "clicked": False,
+                "release": False,
+                "centerliftknob": 0
+            }
+            
+            # Autonomous control data
+            self.autonomous_data = {
+                "run_status": False,
+                "vh_autonomous": False,
+                "wp_loaded_count": 0
+            }
+            
+            # System status
+            self.system_status = {
+                "control_mode": "hardware",
+                "firebase_connected": False,
+                "last_heartbeat": None,
+                "online": False,
+                "timestamp": None
+            }
+            
+            # Callbacks
+            self.on_joystick_update = None
+            self.on_autonomous_update = None
+            self.on_system_update = None
+            
+            # Start listening threads
+            self.start_listeners()
+            print("FirebaseControl initialized successfully")
+            
+        except Exception as e:
+            print(f"Error initializing FirebaseControl: {e}")
+            self.is_connected = False
+            raise
     
     def start_listeners(self):
         """Start Firebase listeners for real-time updates"""
         try:
+            # Test connection first
+            test_data = {"test": "connection"}
+            test_path = FIREBASE_PATHS["system_status"].split("/")
+            self.db.child(*test_path).set(test_data)
+            
             # Listen for joystick data
             joystick_path = FIREBASE_PATHS["joystick"].split("/")
             self.joystick_stream = self.db.child(*joystick_path).stream(
@@ -111,6 +123,8 @@ class FirebaseControl:
         except Exception as e:
             print(f"Error starting Firebase listeners: {e}")
             self.is_connected = False
+            # Try to reconnect after a delay
+            threading.Timer(5.0, self.start_listeners).start()
     
     def on_joystick_data_update(self, message):
         """Handle joystick data updates from Firebase"""
@@ -154,12 +168,23 @@ class FirebaseControl:
     def send_joystick_data(self, joystick_data):
         """Send joystick data to Firebase"""
         try:
-            if self.control_mode == "internet" and self.is_connected:
+            if self.control_mode == "internet":
                 joystick_path = FIREBASE_PATHS["joystick"].split("/")
                 self.db.child(*joystick_path).set(joystick_data)
                 print(f"Sent joystick data to Firebase: {joystick_data}")
+                return True
+            else:
+                print(f"Not in internet mode (current mode: {self.control_mode})")
+                return False
         except Exception as e:
             print(f"Error sending joystick data: {e}")
+            self.is_connected = False
+            # Try to reconnect
+            try:
+                self.start_listeners()
+            except Exception as reconnect_error:
+                print(f"Failed to reconnect to Firebase: {reconnect_error}")
+            return False
     
     def send_autonomous_command(self, command_data):
         """Send autonomous command to Firebase"""

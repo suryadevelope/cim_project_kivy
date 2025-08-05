@@ -126,16 +126,26 @@ class Stream(EventDispatcher):
         else:
             print("Firebase not available in Stream - FIREBASE_AVAILABLE is False")
         
-        self.thread = Thread(target=self.runjoystick,daemon=True)
-        self.thread.start()
-        self.listen_thread = Thread(target=self.listen_udp,daemon=True)
-        self.listen_thread.start()
+        # Start threads
+        try:
+            self.thread = Thread(target=self.runjoystick, daemon=True)
+            self.thread.start()
+            print("Joystick thread started")
+            
+            self.listen_thread = Thread(target=self.listen_udp, daemon=True)
+            self.listen_thread.start()
+            print("UDP listen thread started")
+        except Exception as e:
+            print(f"Error starting threads in Stream: {e}")
 
     def set_control_mode(self, mode):
         """Set the control mode (hardware/internet)"""
         if mode in ["hardware", "internet"]:
             self.control_mode = mode
             print(f"Stream control mode set to: {mode}")
+            # Update Firebase control mode if available
+            if self.firebase_control and hasattr(self.firebase_control, 'set_control_mode'):
+                self.firebase_control.set_control_mode(mode)
             return True
         return False
 
@@ -157,8 +167,11 @@ class Stream(EventDispatcher):
                     "centerliftknob": joystick_data.get("centerliftknob", 0)
                 }
                 if hasattr(self.firebase_control, 'send_joystick_data'):
-                    self.firebase_control.send_joystick_data(firebase_data)
-                    print(f"Sent joystick data to Firebase: {firebase_data}")
+                    success = self.firebase_control.send_joystick_data(firebase_data)
+                    if success:
+                        print(f"Sent joystick data to Firebase: {firebase_data}")
+                    else:
+                        print("Failed to send joystick data to Firebase")
                 else:
                     print("Firebase control does not have send_joystick_data method")
             else:
@@ -192,15 +205,16 @@ class Stream(EventDispatcher):
         return movement
 
     # Define a function to send UDP packets to the specified destination
-    def send_udp_packet(self,socket, data, ip, port):
+    def send_udp_packet(self, socket, data, ip, port):
         try:
             socket.sendto(data.encode(), (ip, port))
+            print(f"UDP packet sent to {ip}:{port} - {data}")
         except Exception as e:
             if(str(e).startswith("[Errno 101] Network is unreachable")):
                 print("Please connect the router and restart the app")
                 toast("Please connect the router and restart the app")
-
-            print(f"Error sending UDP packet: {e}")
+            else:
+                print(f"Error sending UDP packet: {e}")
 
     def map_value(self,value, in_min, in_max, out_min, out_max):
         # Map the value from the input range to the output range
@@ -213,118 +227,103 @@ class Stream(EventDispatcher):
         
            
         while True:
-            pygame.init()
-            pygame.joystick.init()   
-            for joystick_id in range(pygame.joystick.get_count()):
-                joystick = pygame.joystick.Joystick(joystick_id)
-                joystick.init()
-                joystick_name = joystick.get_name()
+            try:
+                pygame.init()
+                pygame.joystick.init()   
+                for joystick_id in range(pygame.joystick.get_count()):
+                    joystick = pygame.joystick.Joystick(joystick_id)
+                    joystick.init()
+                    joystick_name = joystick.get_name()
 
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        exit()
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            exit()
 
-                x_axis = joystick.get_axis(0)
-                y_axis = joystick.get_axis(1)
-            
-                lift_speed = round(self.map_value(joystick.get_axis(3), 1, -1, 20, 100),2) 
-        
-                clicked = joystick.get_button(0)
-                release = joystick.get_button(1)
-
-                centerliftknob = joystick.get_hat(0)[1]
-
-                holdobject = -1
-
-                if(clicked ==1 and release==0):
-                    holdobject = 1
-                    self.updatevideoview(2)
-
-                elif(clicked ==1 and release==1):
-                    holdobject=0
-                    self.updatevideoview(2)
-
-                if(holdobject==-1):
-                    self.updatevideoview(-1)
-
-
-
-
-                x_movement = self.map_input_to_movement(x_axis, dead_zone=0.2)  # Example dead zone of 0.1
-                y_movement = self.map_input_to_movement(y_axis, dead_zone=0.2)  # Example dead zone of 0.1
-
-
+                    x_axis = joystick.get_axis(0)
+                    y_axis = joystick.get_axis(1)
                 
-                speed = (abs(y_movement) + abs(x_movement))/2
-
-                # Check diagonal directions first
-                if y_movement < 0 and x_movement < 0:
-                    direction = "7"  # Forward-left
-                    self.updatevideoview(0)
-                elif y_movement < 0 and x_movement > 0:
-                    direction = "9"  # Forward-right
-                    self.updatevideoview(0)
-                elif y_movement > 0 and x_movement < 0:
-                    direction = "1"  # Backward-left
-                    self.updatevideoview(1)
-                elif y_movement > 0 and x_movement > 0:
-                    direction = "3"  # Backward-right
-                    self.updatevideoview(1)
-
-
-                elif y_movement > 0:
-                    speed = abs(y_movement)
-                    direction = "5"#backward
-                    self.updatevideoview(1)
-                elif y_movement < 0:
-                    speed = abs(y_movement)
-                    direction = "8"#forward
-                    self.updatevideoview(0)
-
-                # else:
-                #     speed = 0
-                #     direction = "115"#stop
-                #     self.updatevideoview(-2)
-
-
-                # data = "@{},{},{},{},{}".format(speed, direction, holdobject,centerliftknob,lift_speed)
-                # print(data)
+                    lift_speed = round(self.map_value(joystick.get_axis(3), 1, -1, 20, 100),2) 
             
-                # if joystick_id == 0:
-                #     self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
+                    clicked = joystick.get_button(0)
+                    release = joystick.get_button(1)
 
-                elif x_movement > 0:
-                    speed = abs(x_movement)
-                    direction = "6"#right
-                elif x_movement < 0:
-                    speed = abs(x_movement)
-                    direction = "4"#left
-                else:
-                    speed = 0
-                    direction = "115"
-                    self.updatevideoview(-2)
+                    centerliftknob = joystick.get_hat(0)[1]
 
-                data = "@{},{},{},{},{}".format(speed, direction, holdobject,centerliftknob,lift_speed)
+                    holdobject = -1
 
-                # Only send UDP data if in hardware mode
-                if joystick_id == 0 and self.control_mode == "hardware":
-                    self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
-                
-                # Send joystick data to Firebase if in internet mode
-                if joystick_id == 0 and self.control_mode == "internet":
-                    joystick_data = {
-                        "x_axis": x_axis,
-                        "y_axis": y_axis,
-                        "lift_speed": lift_speed,
-                        "clicked": clicked,
-                        "release": release,
-                        "centerliftknob": centerliftknob
-                    }
-                    self.send_joystick_to_firebase(joystick_data)
+                    if(clicked ==1 and release==0):
+                        holdobject = 1
+                        self.updatevideoview(2)
 
-                # print(data)
-                pygame.time.wait(1)
+                    elif(clicked ==1 and release==1):
+                        holdobject=0
+                        self.updatevideoview(2)
+
+                    if(holdobject==-1):
+                        self.updatevideoview(-1)
+
+                    x_movement = self.map_input_to_movement(x_axis, dead_zone=0.2)  # Example dead zone of 0.1
+                    y_movement = self.map_input_to_movement(y_axis, dead_zone=0.2)  # Example dead zone of 0.1
+
+                    speed = (abs(y_movement) + abs(x_movement))/2
+
+                    # Check diagonal directions first
+                    if y_movement < 0 and x_movement < 0:
+                        direction = "7"  # Forward-left
+                        self.updatevideoview(0)
+                    elif y_movement < 0 and x_movement > 0:
+                        direction = "9"  # Forward-right
+                        self.updatevideoview(0)
+                    elif y_movement > 0 and x_movement < 0:
+                        direction = "1"  # Backward-left
+                        self.updatevideoview(1)
+                    elif y_movement > 0 and x_movement > 0:
+                        direction = "3"  # Backward-right
+                        self.updatevideoview(1)
+                    elif y_movement > 0:
+                        speed = abs(y_movement)
+                        direction = "5"#backward
+                        self.updatevideoview(1)
+                    elif y_movement < 0:
+                        speed = abs(y_movement)
+                        direction = "8"#forward
+                        self.updatevideoview(0)
+                    elif x_movement > 0:
+                        speed = abs(x_movement)
+                        direction = "6"#right
+                    elif x_movement < 0:
+                        speed = abs(x_movement)
+                        direction = "4"#left
+                    else:
+                        speed = 0
+                        direction = "115"
+                        self.updatevideoview(-2)
+
+                    data = "@{},{},{},{},{}".format(speed, direction, holdobject,centerliftknob,lift_speed)
+
+                    # Only send UDP data if in hardware mode and joystick_id == 0
+                    if joystick_id == 0 and self.control_mode == "hardware":
+                        self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
+                        print(f"Sent UDP data (hardware mode): {data}")
+                    
+                    # Send joystick data to Firebase if in internet mode and joystick_id == 0
+                    if joystick_id == 0 and self.control_mode == "internet":
+                        joystick_data = {
+                            "x_axis": x_axis,
+                            "y_axis": y_axis,
+                            "lift_speed": lift_speed,
+                            "clicked": clicked,
+                            "release": release,
+                            "centerliftknob": centerliftknob
+                        }
+                        self.send_joystick_to_firebase(joystick_data)
+
+                    pygame.time.wait(1)
+                    
+            except Exception as e:
+                print(f"Error in runjoystick: {e}")
+                time.sleep(1)  # Wait before retrying
 
     def listen_udp(self):
         while True:
