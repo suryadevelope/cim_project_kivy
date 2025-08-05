@@ -276,6 +276,7 @@ class MainScreen(Screen):
         if FIREBASE_AVAILABLE:
             try:
                 self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
+                # Set up callbacks
                 self.firebase_control.on_joystick_update = self.on_firebase_joystick_update
                 self.firebase_control.on_autonomous_update = self.on_firebase_autonomous_update
                 self.firebase_control.on_system_update = self.on_firebase_system_update
@@ -283,6 +284,8 @@ class MainScreen(Screen):
             except Exception as e:
                 print(f"Error initializing Firebase control: {e}")
                 self.firebase_control = None
+        else:
+            print("Firebase not available - pyrebase4 not installed")
 
         # --- Top Navigation Bar ---
         top_nav = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, padding=[20, 10, 20, 10], spacing=20)
@@ -429,6 +432,11 @@ class MainScreen(Screen):
                                     color=(0.4, 0.4, 0.4, 1), font_size='12sp')
         autonomous_box.add_widget(self.nav_state_label)
         
+        # Mission Button
+        mission_btn = Button(text='Mission', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.2, 0.4, 0.8, 1))
+        mission_btn.bind(on_release=self.goto_mapplot)
+        autonomous_box.add_widget(mission_btn)
+        
         # Start/Stop Buttons
         button_box = BoxLayout(orientation='vertical', size_hint=(1, None), height=90, spacing=8)
         start_btn = Button(text='Start', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.1, 0.5, 0.2, 1))
@@ -498,6 +506,7 @@ class MainScreen(Screen):
             # Update Stream control mode
             if hasattr(streaming, 'set_control_mode'):
                 streaming.set_control_mode("internet")
+                print(f"Stream control mode updated to: {streaming.get_control_mode()}")
             toast("Switched to Internet Control Mode")
         else:
             self.control_mode = "hardware"
@@ -508,6 +517,7 @@ class MainScreen(Screen):
             # Update Stream control mode
             if hasattr(streaming, 'set_control_mode'):
                 streaming.set_control_mode("hardware")
+                print(f"Stream control mode updated to: {streaming.get_control_mode()}")
             toast("Switched to Hardware Control Mode")
     
     def on_firebase_joystick_update(self, joystick_data):

@@ -6,6 +6,33 @@ from pyrebase import initialize_app
 from kivy.clock import Clock
 from kivy.properties import BooleanProperty, StringProperty
 
+# Import configuration
+try:
+    from firebase_config import FIREBASE_CONFIG, FIREBASE_PATHS, ROVER_CONTROL_PARAMS
+except ImportError:
+    # Fallback configuration if config file doesn't exist
+    FIREBASE_CONFIG = {
+        "apiKey": "your-api-key-here",
+        "authDomain": "your-project-id.firebaseapp.com",
+        "databaseURL": "https://your-project-id-default-rtdb.firebaseio.com",
+        "projectId": "your-project-id",
+        "storageBucket": "your-project-id.appspot.com",
+        "messagingSenderId": "your-sender-id",
+        "appId": "your-app-id"
+    }
+    FIREBASE_PATHS = {
+        "joystick": "control/joystick",
+        "autonomous": "control/autonomous", 
+        "system_status": "system/status",
+        "sensors": "sensors/current"
+    }
+    ROVER_CONTROL_PARAMS = {
+        "joystick_deadzone": 0.1,
+        "max_speed": 100.0,
+        "update_frequency": 50,
+        "udp_timeout": 1.0
+    }
+
 class FirebaseControl:
     def __init__(self, config):
         """
@@ -190,31 +217,4 @@ class FirebaseControl:
             self.is_connected = False
             print("Firebase listeners stopped")
         except Exception as e:
-            print(f"Error stopping Firebase listeners: {e}")
-
-# Import configuration
-try:
-    from firebase_config import FIREBASE_CONFIG, FIREBASE_PATHS, ROVER_CONTROL_PARAMS
-except ImportError:
-    # Fallback configuration if config file doesn't exist
-    FIREBASE_CONFIG = {
-        "apiKey": "your-api-key-here",
-        "authDomain": "your-project-id.firebaseapp.com",
-        "databaseURL": "https://your-project-id-default-rtdb.firebaseio.com",
-        "projectId": "your-project-id",
-        "storageBucket": "your-project-id.appspot.com",
-        "messagingSenderId": "your-sender-id",
-        "appId": "your-app-id"
-    }
-    FIREBASE_PATHS = {
-        "joystick": "control/joystick",
-        "autonomous": "control/autonomous", 
-        "system_status": "system/status",
-        "sensors": "sensors/current"
-    }
-    ROVER_CONTROL_PARAMS = {
-        "joystick_deadzone": 0.1,
-        "max_speed": 100.0,
-        "update_frequency": 50,
-        "udp_timeout": 1.0
-    } 
+            print(f"Error stopping Firebase listeners: {e}") 

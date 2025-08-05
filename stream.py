@@ -11,6 +11,13 @@ from kivy.clock import Clock
 from kivy.event import EventDispatcher
 from kivymd.toast import toast
 
+# Firebase imports
+try:
+    from firebase_control import FirebaseControl
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    print("Firebase not available in stream.py")
 
 from kivy.properties import NumericProperty, ObjectProperty, StringProperty
 
@@ -96,9 +103,31 @@ class Stream(EventDispatcher):
         super(Stream, self).__init__(**kwargs)
         self.compasswidget = None
         self.control_mode = "hardware"  # Default control mode
+        self.firebase_control = None
+        
+        # Initialize Firebase control if available
+        if FIREBASE_AVAILABLE:
+            try:
+                from firebase_config import FIREBASE_CONFIG
+                # Import FirebaseControl locally to avoid linter issues
+                try:
+                    from firebase_control import FirebaseControl
+                    self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
+                    print("Firebase control initialized in Stream")
+                except ImportError as e:
+                    self.firebase_control = None
+                    print(f"FirebaseControl not available in Stream: {e}")
+                except Exception as e:
+                    self.firebase_control = None
+                    print(f"Error initializing FirebaseControl in Stream: {e}")
+            except Exception as e:
+                print(f"Error importing Firebase config in Stream: {e}")
+                self.firebase_control = None
+        else:
+            print("Firebase not available in Stream - FIREBASE_AVAILABLE is False")
+        
         self.thread = Thread(target=self.runjoystick,daemon=True)
         self.thread.start()
-
         self.listen_thread = Thread(target=self.listen_udp,daemon=True)
         self.listen_thread.start()
 
@@ -113,6 +142,34 @@ class Stream(EventDispatcher):
     def get_control_mode(self):
         """Get current control mode"""
         return self.control_mode
+
+    def send_joystick_to_firebase(self, joystick_data):
+        """Send joystick data to Firebase if in internet mode"""
+        try:
+            if self.control_mode == "internet" and self.firebase_control and FIREBASE_AVAILABLE:
+                # Convert joystick data to Firebase format
+                firebase_data = {
+                    "x_axis": joystick_data.get("x_axis", 0.0),
+                    "y_axis": joystick_data.get("y_axis", 0.0),
+                    "lift_speed": joystick_data.get("lift_speed", 0.0),
+                    "clicked": joystick_data.get("clicked", False),
+                    "release": joystick_data.get("release", False),
+                    "centerliftknob": joystick_data.get("centerliftknob", 0)
+                }
+                if hasattr(self.firebase_control, 'send_joystick_data'):
+                    self.firebase_control.send_joystick_data(firebase_data)
+                    print(f"Sent joystick data to Firebase: {firebase_data}")
+                else:
+                    print("Firebase control does not have send_joystick_data method")
+            else:
+                if self.control_mode != "internet":
+                    print(f"Not in internet mode (current mode: {self.control_mode})")
+                elif not self.firebase_control:
+                    print("Firebase control not initialized")
+                elif not FIREBASE_AVAILABLE:
+                    print("Firebase not available")
+        except Exception as e:
+            print(f"Error sending joystick data to Firebase: {e}")
 
     def updatevideoview(self,view):
         self.update_event = view
@@ -253,6 +310,18 @@ class Stream(EventDispatcher):
                 # Only send UDP data if in hardware mode
                 if joystick_id == 0 and self.control_mode == "hardware":
                     self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
+                
+                # Send joystick data to Firebase if in internet mode
+                if joystick_id == 0 and self.control_mode == "internet":
+                    joystick_data = {
+                        "x_axis": x_axis,
+                        "y_axis": y_axis,
+                        "lift_speed": lift_speed,
+                        "clicked": clicked,
+                        "release": release,
+                        "centerliftknob": centerliftknob
+                    }
+                    self.send_joystick_to_firebase(joystick_data)
 
                 # print(data)
                 pygame.time.wait(1)
