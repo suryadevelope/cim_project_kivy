@@ -918,34 +918,40 @@ class MainScreen(Screen):
                 try:
                     mapplot_screen = app.root.get_screen('mapplot')
                     if hasattr(mapplot_screen, 'user_markers'):
-                        # Clear existing markers
-                        for marker, _ in mapplot_screen.user_markers[:]:
-                            try:
-                                mapplot_screen.mapview.remove_marker(marker)
-                            except Exception as e:
-                                print(f"Warning: Could not remove marker: {e}")
-                        mapplot_screen.user_markers.clear()
-                        
-                        # Add new mission points as markers
-                        for i, point in enumerate(mission_points):
-                            try:
-                                lat, lon = point[0], point[1]
-                                marker = MapMarker(lat=lat, lon=lon)
-                                mapplot_screen.mapview.add_marker(marker)
-                                mapplot_screen.user_markers.append((marker, (lat, lon)))
-                                print(f"Added mission point {i+1}: ({lat}, {lon})")
-                            except Exception as e:
-                                print(f"Error adding mission point {i+1}: {e}")
-                        
-                        # Update path line
-                        if hasattr(mapplot_screen, 'update_path_line'):
-                            mapplot_screen.update_path_line()
-                        
-                        print(f"Successfully updated mission with {len(mission_points)} waypoints")
-                        
+                        # --- Only update markers if mission points have changed ---
+                        # Store last mission points in mapplot_screen
+                        if not hasattr(mapplot_screen, '_last_mission_points'):
+                            mapplot_screen._last_mission_points = []
+                        # Compare new mission points to last
+                        if mission_points != mapplot_screen._last_mission_points:
+                            print("Mission points changed, updating markers...")
+                            # Clear existing markers
+                            for marker, _ in mapplot_screen.user_markers[:]:
+                                try:
+                                    mapplot_screen.mapview.remove_marker(marker)
+                                except Exception as e:
+                                    print(f"Warning: Could not remove marker: {e}")
+                            mapplot_screen.user_markers.clear()
+                            # Add new mission points as markers
+                            for i, point in enumerate(mission_points):
+                                try:
+                                    lat, lon = point[0], point[1]
+                                    marker = MapMarker(lat=lat, lon=lon)
+                                    mapplot_screen.mapview.add_marker(marker)
+                                    mapplot_screen.user_markers.append((marker, (lat, lon)))
+                                    print(f"Added mission point {i+1}: ({lat}, {lon})")
+                                except Exception as e:
+                                    print(f"Error adding mission point {i+1}: {e}")
+                            # Update path line
+                            if hasattr(mapplot_screen, 'update_path_line'):
+                                mapplot_screen.update_path_line()
+                            print(f"Successfully updated mission with {len(mission_points)} waypoints")
+                            # Update last mission points
+                            mapplot_screen._last_mission_points = list(mission_points)
+                        else:
+                            print("Mission points unchanged, not updating markers.")
                 except Exception as e:
                     print(f"Error updating MapPlotScreen with mission data: {e}")
-            
             # Update autonomous status
             if status == "start":
                 self.last_status = "start"
@@ -960,14 +966,12 @@ class MainScreen(Screen):
             elif status == "pause":
                 self.last_status = "pause"
                 print("Mission paused from Firebase")
-            
             # Update UI to reflect mission status
             self.update_autonomous_display({
                 "run_status": status == "start",
                 "vh_autonomous": status == "start",
                 "wp_loaded_count": len(mission_points)
             })
-            
         except Exception as e:
             print(f"Error handling mission data from Firebase: {e}")
             import traceback
