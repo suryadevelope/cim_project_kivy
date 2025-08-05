@@ -2,13 +2,14 @@
 # Replace these values with your own Firebase project configuration
 
 FIREBASE_CONFIG = {
-    "apiKey": "your-api-key-here",
-    "authDomain": "your-project-id.firebaseapp.com",
-    "databaseURL": "https://your-project-id-default-rtdb.firebaseio.com",
-    "projectId": "your-project-id",
-    "storageBucket": "your-project-id.appspot.com",
-    "messagingSenderId": "your-sender-id",
-    "appId": "your-app-id"
+  "apiKey": "AIzaSyBw-vayMYjNPxZcrnMuAS5I1W9WRO1yZ0s",
+  "authDomain": "army-rover.firebaseapp.com",
+  "databaseURL": "https://army-rover-default-rtdb.firebaseio.com",
+  "projectId": "army-rover",
+  "storageBucket": "army-rover.firebasestorage.app",
+  "messagingSenderId": "270093464380",
+  "appId": "1:270093464380:web:3872b44054ef575765e439",
+  "measurementId": "G-4YZ5SN0VXR"
 }
 
 # Database paths for different control data
