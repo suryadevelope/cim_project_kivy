@@ -495,6 +495,9 @@ class MainScreen(Screen):
             self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
             if self.firebase_control:
                 self.firebase_control.set_control_mode("internet")
+            # Update Stream control mode
+            if hasattr(streaming, 'set_control_mode'):
+                streaming.set_control_mode("internet")
             toast("Switched to Internet Control Mode")
         else:
             self.control_mode = "hardware"
@@ -502,6 +505,9 @@ class MainScreen(Screen):
             self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
             if self.firebase_control:
                 self.firebase_control.set_control_mode("hardware")
+            # Update Stream control mode
+            if hasattr(streaming, 'set_control_mode'):
+                streaming.set_control_mode("hardware")
             toast("Switched to Hardware Control Mode")
     
     def on_firebase_joystick_update(self, joystick_data):
@@ -554,14 +560,80 @@ class MainScreen(Screen):
             print(f"Error handling Firebase system update: {e}")
     
     def send_joystick_udp(self, joystick_data):
-        """Send joystick data via UDP"""
+        """Send joystick data via UDP in the correct format"""
         try:
             import socket
-            data = json.dumps(joystick_data)
+            
+            # Convert Firebase joystick data to the format expected by the rover
+            x_axis = joystick_data.get("x_axis", 0.0)
+            y_axis = joystick_data.get("y_axis", 0.0)
+            lift_speed = joystick_data.get("lift_speed", 0.0)
+            clicked = joystick_data.get("clicked", False)
+            release = joystick_data.get("release", False)
+            centerliftknob = joystick_data.get("centerliftknob", 0)
+            
+            # Convert joystick values to movement values (similar to Stream class)
+            def map_input_to_movement(value, dead_zone=0.2):
+                if abs(value) < dead_zone:
+                    return 0
+                movement = int(value * 255)
+                if movement > 255:
+                    movement = 255
+                elif movement < -255:
+                    movement = -255
+                return movement
+            
+            x_movement = map_input_to_movement(x_axis, dead_zone=0.2)
+            y_movement = map_input_to_movement(y_axis, dead_zone=0.2)
+            
+            # Determine direction and speed (similar to Stream class logic)
+            speed = 0
+            direction = "115"  # Stop
+            holdobject = -1
+            
+            # Handle button states
+            if clicked and not release:
+                holdobject = 1
+            elif clicked and release:
+                holdobject = 0
+            
+            # Determine direction based on movement
+            if y_movement < 0 and x_movement < 0:
+                direction = "7"  # Forward-left
+                speed = abs(y_movement)
+            elif y_movement < 0 and x_movement > 0:
+                direction = "9"  # Forward-right
+                speed = abs(y_movement)
+            elif y_movement > 0 and x_movement < 0:
+                direction = "1"  # Backward-left
+                speed = abs(y_movement)
+            elif y_movement > 0 and x_movement > 0:
+                direction = "3"  # Backward-right
+                speed = abs(y_movement)
+            elif y_movement > 0:
+                direction = "5"  # Backward
+                speed = abs(y_movement)
+            elif y_movement < 0:
+                direction = "8"  # Forward
+                speed = abs(y_movement)
+            elif x_movement > 0:
+                direction = "6"  # Right
+                speed = abs(x_movement)
+            elif x_movement < 0:
+                direction = "4"  # Left
+                speed = abs(x_movement)
+            
+            # Convert lift_speed to the expected range (20-100)
+            lift_speed_converted = max(20, min(100, int(lift_speed * 80 + 20)))
+            
+            # Format data in the expected format: "@{speed},{direction},{holdobject},{centerliftknob},{lift_speed}"
+            data = "@{},{},{},{},{}".format(speed, direction, holdobject, centerliftknob, lift_speed_converted)
+            
+            # Send via UDP
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             udp_socket.sendto(data.encode('utf-8'), ('192.168.1.10', 5005))
             udp_socket.close()
-            print(f"Sent joystick data via UDP: {joystick_data}")
+            print(f"Sent joystick data via UDP: {data}")
         except Exception as e:
             print(f"Error sending joystick data via UDP: {e}")
 

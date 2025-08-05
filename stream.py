@@ -95,11 +95,24 @@ class Stream(EventDispatcher):
     def __init__(self, **kwargs):
         super(Stream, self).__init__(**kwargs)
         self.compasswidget = None
+        self.control_mode = "hardware"  # Default control mode
         self.thread = Thread(target=self.runjoystick,daemon=True)
         self.thread.start()
 
         self.listen_thread = Thread(target=self.listen_udp,daemon=True)
         self.listen_thread.start()
+
+    def set_control_mode(self, mode):
+        """Set the control mode (hardware/internet)"""
+        if mode in ["hardware", "internet"]:
+            self.control_mode = mode
+            print(f"Stream control mode set to: {mode}")
+            return True
+        return False
+
+    def get_control_mode(self):
+        """Get current control mode"""
+        return self.control_mode
 
     def updatevideoview(self,view):
         self.update_event = view
@@ -237,7 +250,8 @@ class Stream(EventDispatcher):
 
                 data = "@{},{},{},{},{}".format(speed, direction, holdobject,centerliftknob,lift_speed)
 
-                if joystick_id == 0:
+                # Only send UDP data if in hardware mode
+                if joystick_id == 0 and self.control_mode == "hardware":
                     self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
 
                 # print(data)
