@@ -1704,14 +1704,38 @@ class MainScreen(Screen):
             self.send_status_udp('start')
             self.start_autonomous_mission_sender()
         elif self.control_mode == "internet" and self.firebase_control:
-            # Send start command to Firebase
-            autonomous_command = {
-                "run_status": True,
-                "vh_autonomous": True,
-                "wp_loaded_count": 0
-            }
-            self.firebase_control.send_autonomous_command(autonomous_command)
-            toast("Sent start command via Firebase")
+            # Get existing mission data and update status
+            try:
+                # First, try to get existing mission data from Firebase
+                from firebase_config import FIREBASE_PATHS
+                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                existing_data = self.firebase_control.db.child(*autonomous_path).get().val() or {}
+                
+                # Preserve existing mission points if they exist
+                mission_points = existing_data.get("mission", [])
+                
+                # Create updated mission data with start status
+                updated_mission_data = {
+                    "mission": mission_points,
+                    "status": "start",
+                    "timestamp": time.time(),
+                    "mission_count": len(mission_points)
+                }
+                
+                # Send updated mission data to Firebase
+                success = self.firebase_control.send_autonomous_mission(updated_mission_data)
+                if success:
+                    toast("Mission started via Firebase")
+                    print(f"✅ Mission started with {len(mission_points)} waypoints")
+                else:
+                    toast("Failed to start mission via Firebase")
+                    print("❌ Failed to start mission via Firebase")
+                    
+            except Exception as e:
+                print(f"Error starting mission via Firebase: {e}")
+                import traceback
+                traceback.print_exc()
+                toast("Error starting mission via Firebase")
 
     def send_stop_status(self, instance):
         self.last_status = 'stop'
@@ -1719,14 +1743,38 @@ class MainScreen(Screen):
             self.send_status_udp('stop')
             self.stop_autonomous_mission_sender()
         elif self.control_mode == "internet" and self.firebase_control:
-            # Send stop command to Firebase
-            autonomous_command = {
-                "run_status": False,
-                "vh_autonomous": False,
-                "wp_loaded_count": 0
-            }
-            self.firebase_control.send_autonomous_command(autonomous_command)
-            toast("Sent stop command via Firebase")
+            # Get existing mission data and update status
+            try:
+                # First, try to get existing mission data from Firebase
+                from firebase_config import FIREBASE_PATHS
+                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                existing_data = self.firebase_control.db.child(*autonomous_path).get().val() or {}
+                
+                # Preserve existing mission points if they exist
+                mission_points = existing_data.get("mission", [])
+                
+                # Create updated mission data with stop status
+                updated_mission_data = {
+                    "mission": mission_points,
+                    "status": "stop",
+                    "timestamp": time.time(),
+                    "mission_count": len(mission_points)
+                }
+                
+                # Send updated mission data to Firebase
+                success = self.firebase_control.send_autonomous_mission(updated_mission_data)
+                if success:
+                    toast("Mission stopped via Firebase")
+                    print(f"✅ Mission stopped with {len(mission_points)} waypoints preserved")
+                else:
+                    toast("Failed to stop mission via Firebase")
+                    print("❌ Failed to stop mission via Firebase")
+                    
+            except Exception as e:
+                print(f"Error stopping mission via Firebase: {e}")
+                import traceback
+                traceback.print_exc()
+                toast("Error stopping mission via Firebase")
 
     def start_autonomous_mission_sender(self):
         if self.autonomous_event is None:
