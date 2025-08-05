@@ -1,13 +1,211 @@
-Step 1: Update the Project Directory Structure
+# Rover Control System
 
-css
+A comprehensive rover control application with Firebase Realtime Database integration for remote control capabilities.
 
-rover_app/
-├── main.py
-├── assets/
-│   ├── splash_image.png
+## Features
+
+- **Dual Control Modes**: Hardware (joystick) and Internet (Firebase) control
+- **Real-time Video Streaming**: Multiple camera feeds with full-screen capability
+- **GPS Integration**: Real-time GPS tracking and mapping
+- **Autonomous Navigation**: Waypoint-based autonomous control
+- **Firebase Remote Control**: Internet-based remote control via Firebase Realtime Database
+- **Compass Integration**: Real-time compass heading display
+- **Battery Monitoring**: Real-time battery status monitoring
+
+## Project Structure
+
+```
+cim_project_kivy/
+├── main.py                 # Main application file
+├── firebase_control.py     # Firebase integration module
+├── firebase_config.py      # Firebase configuration
+├── test_firebase.py        # Firebase integration tests
+├── FIREBASE_SETUP.md       # Firebase setup guide
+├── requirements.txt        # Python dependencies
+├── assets/                 # Application assets
 │   ├── logo.png
-└── rover_app.spec
+│   ├── splash_image.png
+│   ├── compass_bg.png
+│   ├── needle.png
+│   └── ...
+├── audio/                  # Audio files
+│   ├── success_conn.mp3
+│   ├── waiting_conn.mp3
+│   └── ...
+└── tests/                  # Test files
+    ├── gpstest1.py
+    └── maingps.py
+```
+
+## Installation
+
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Firebase Setup** (for remote control):
+   - Follow the instructions in `FIREBASE_SETUP.md`
+   - Update `firebase_config.py` with your Firebase credentials
+
+3. **Test Firebase Integration**:
+   ```bash
+   python test_firebase.py
+   ```
+
+## Usage
+
+### Running the Application
+
+```bash
+python main.py
+```
+
+### Control Modes
+
+1. **Hardware Mode** (Default):
+   - Use physical joystick for direct control
+   - Green "Hardware" button in top navigation
+
+2. **Internet Mode**:
+   - Remote control via Firebase Realtime Database
+   - Orange "Internet" button in top navigation
+   - Control rover from anywhere with internet access
+
+### Remote Control via Firebase
+
+When in Internet mode, control the rover by updating the Firebase database:
+
+```json
+{
+  "control": {
+    "joystick": {
+      "x_axis": 0.5,      // -1.0 to 1.0 (left/right)
+      "y_axis": -0.3,     // -1.0 to 1.0 (forward/backward)
+      "lift_speed": 0.8,  // 0.0 to 1.0 (lift speed)
+      "clicked": false,   // boolean (button press)
+      "release": false,   // boolean (button release)
+      "centerliftknob": 0 // integer (hat position)
+    },
+    "autonomous": {
+      "run_status": true,      // Start/stop autonomous mode
+      "vh_autonomous": true,   // Enable/disable autonomous navigation
+      "wp_loaded_count": 5     // Number of waypoints loaded
+    }
+  }
+}
+```
+
+## Configuration
+
+### Firebase Configuration
+
+Edit `firebase_config.py` to set up Firebase integration:
+
+```python
+FIREBASE_CONFIG = {
+    "apiKey": "your-actual-api-key",
+    "authDomain": "your-project-id.firebaseapp.com",
+    "databaseURL": "https://your-project-id-default-rtdb.firebaseio.com",
+    "projectId": "your-project-id",
+    "storageBucket": "your-project-id.appspot.com",
+    "messagingSenderId": "your-sender-id",
+    "appId": "your-app-id"
+}
+```
+
+### Control Parameters
+
+Adjust rover control parameters in `firebase_config.py`:
+
+```python
+ROVER_CONTROL_PARAMS = {
+    "joystick_deadzone": 0.1,  # Minimum joystick movement
+    "max_speed": 100.0,         # Maximum speed percentage
+    "update_frequency": 50,      # Control update frequency
+    "udp_timeout": 1.0          # UDP timeout
+}
+```
+
+## Features
+
+### Real-time Video Streaming
+- Multiple camera feeds displayed in grid layout
+- Click any camera feed for full-screen view
+- Auto-zoom mode for automatic full-screen on camera events
+
+### GPS and Mapping
+- Real-time GPS tracking with map integration
+- Satellite and regular map view toggle
+- Waypoint plotting and autonomous navigation
+- Mission planning and execution
+
+### Autonomous Navigation
+- Waypoint-based navigation system
+- Real-time progress tracking
+- Distance and heading calculations
+- Mission status monitoring
+
+### Battery and System Monitoring
+- Real-time battery voltage monitoring
+- System status indicators
+- Connection status monitoring
+- Audio feedback for system events
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Firebase Connection Failed**:
+   - Check internet connection
+   - Verify Firebase configuration
+   - Run `python test_firebase.py` to test connection
+
+2. **Camera Not Working**:
+   - Check camera permissions
+   - Verify camera index in code
+   - Test with different camera indices
+
+3. **GPS Not Fixing**:
+   - Ensure GPS antenna is connected
+   - Check GPS module configuration
+   - Wait for 3D fix (may take several minutes)
+
+### Debug Mode
+
+Enable debug logging by checking console output for:
+- Firebase connection status
+- GPS fix status
+- Camera feed status
+- System error messages
+
+## Development
+
+### Testing
+
+Run the Firebase integration tests:
+```bash
+python test_firebase.py
+```
+
+### Building Executable
+
+Use PyInstaller to create a standalone executable:
+```bash
+pyinstaller Rover.spec
+```
+
+## License
+
+This project is designed for educational and research purposes.
+
+## Support
+
+For issues or questions:
+1. Check the console logs for error messages
+2. Verify Firebase configuration
+3. Test with simple database updates first
+4. Ensure network connectivity to Firebase servers
 
 Step 2: Update the Code
 

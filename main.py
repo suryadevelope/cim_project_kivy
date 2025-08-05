@@ -47,6 +47,14 @@ from gtts import gTTS
 import pygame
 from kivy.config import Config
 
+# Firebase imports
+try:
+    from firebase_control import FirebaseControl, FIREBASE_CONFIG
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    print("Firebase not available - pyrebase4 not installed")
+
 
 # Set environment variables (optional but helpful)
 os.environ["KIVY_NO_CONSOLELOG"] = "1"
@@ -261,6 +269,20 @@ class MainScreen(Screen):
         self.allvideopopups = []
         self.image_widgets = []
         self.autonomous_event = None
+        
+        # Firebase control initialization
+        self.firebase_control = None
+        self.control_mode = "hardware"  # Default to hardware control
+        if FIREBASE_AVAILABLE:
+            try:
+                self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
+                self.firebase_control.on_joystick_update = self.on_firebase_joystick_update
+                self.firebase_control.on_autonomous_update = self.on_firebase_autonomous_update
+                self.firebase_control.on_system_update = self.on_firebase_system_update
+                print("Firebase control initialized successfully")
+            except Exception as e:
+                print(f"Error initializing Firebase control: {e}")
+                self.firebase_control = None
 
         # --- Top Navigation Bar ---
         top_nav = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, padding=[20, 10, 20, 10], spacing=20)
@@ -281,6 +303,18 @@ class MainScreen(Screen):
         self.top_switch = Switch(active=False, size_hint_x=None, width=60)
         self.top_switch.bind(active=self.on_switch_active)
         top_nav.add_widget(self.top_switch)
+        
+        # Control mode toggle button
+        self.control_mode_btn = Button(
+            text="Hardware", 
+            size_hint_x=None, 
+            width=100, 
+            height=40, 
+            background_color=(0.2, 0.6, 0.2, 1), 
+            font_size='14sp'
+        )
+        self.control_mode_btn.bind(on_release=self.toggle_control_mode)
+        top_nav.add_widget(self.control_mode_btn)
         # Add GPS info labels
         self.satcount_label = Label(text="Satcount: 0", size_hint_x=None, width=120, color=(1,1,1,1))
         self.irnss_accuracy_label = Label(text="IRNSS Acc: N/A", size_hint_x=None, width=140, color=(1,1,1,1))
@@ -452,6 +486,84 @@ class MainScreen(Screen):
             toast("Auto cam zoom mode OFF")
             if self.updatefullscreenval:
                 self.dismiss_full_screen(self.popup)
+    
+    def toggle_control_mode(self, instance):
+        """Toggle between hardware and internet control modes"""
+        if self.control_mode == "hardware":
+            self.control_mode = "internet"
+            self.control_mode_btn.text = "Internet"
+            self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
+            if self.firebase_control:
+                self.firebase_control.set_control_mode("internet")
+            toast("Switched to Internet Control Mode")
+        else:
+            self.control_mode = "hardware"
+            self.control_mode_btn.text = "Hardware"
+            self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
+            if self.firebase_control:
+                self.firebase_control.set_control_mode("hardware")
+            toast("Switched to Hardware Control Mode")
+    
+    def on_firebase_joystick_update(self, joystick_data):
+        """Handle joystick data updates from Firebase"""
+        try:
+            print(f"Firebase joystick update: {joystick_data}")
+            # Send joystick data to the rover via UDP if in internet mode
+            if self.control_mode == "internet":
+                # Convert Firebase joystick data to UDP format
+                udp_data = {
+                    "x_axis": joystick_data.get("x_axis", 0.0),
+                    "y_axis": joystick_data.get("y_axis", 0.0),
+                    "lift_speed": joystick_data.get("lift_speed", 0.0),
+                    "clicked": joystick_data.get("clicked", False),
+                    "release": joystick_data.get("release", False),
+                    "centerliftknob": joystick_data.get("centerliftknob", 0)
+                }
+                # Send via existing UDP mechanism
+                self.send_joystick_udp(udp_data)
+        except Exception as e:
+            print(f"Error handling Firebase joystick update: {e}")
+    
+    def on_firebase_autonomous_update(self, autonomous_data):
+        """Handle autonomous data updates from Firebase"""
+        try:
+            print(f"Firebase autonomous update: {autonomous_data}")
+            # Update autonomous display with Firebase data
+            self.update_autonomous_display(autonomous_data)
+        except Exception as e:
+            print(f"Error handling Firebase autonomous update: {e}")
+    
+    def on_firebase_system_update(self, system_data):
+        """Handle system status updates from Firebase"""
+        try:
+            print(f"Firebase system update: {system_data}")
+            # Update system status display
+            control_mode = system_data.get("control_mode", "hardware")
+            online = system_data.get("online", False)
+            firebase_connected = system_data.get("firebase_connected", False)
+            
+            # Update UI to reflect system status
+            if hasattr(self, 'control_mode_btn'):
+                if control_mode == "internet":
+                    self.control_mode_btn.text = "Internet"
+                    self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
+                else:
+                    self.control_mode_btn.text = "Hardware"
+                    self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
+        except Exception as e:
+            print(f"Error handling Firebase system update: {e}")
+    
+    def send_joystick_udp(self, joystick_data):
+        """Send joystick data via UDP"""
+        try:
+            import socket
+            data = json.dumps(joystick_data)
+            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_socket.sendto(data.encode('utf-8'), ('192.168.1.10', 5005))
+            udp_socket.close()
+            print(f"Sent joystick data via UDP: {joystick_data}")
+        except Exception as e:
+            print(f"Error sending joystick data via UDP: {e}")
 
     def update_utilsdata_ui(self, instance, value):
         print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
@@ -898,6 +1010,10 @@ class MainScreen(Screen):
     def on_leave(self):
         for image_widget in self.image_widgets:
             image_widget.unbind(on_touch_down=self.on_image_touch)
+        
+        # Clean up Firebase listeners
+        if self.firebase_control:
+            self.firebase_control.stop_listeners()
 
     def on_size(self, instance, size):
         for image_widget in self.image_widgets:
@@ -995,13 +1111,33 @@ class MainScreen(Screen):
 
     def send_start_status(self, instance):
         self.last_status = 'start'
-        self.send_status_udp('start')
-        self.start_autonomous_mission_sender()
+        if self.control_mode == "hardware":
+            self.send_status_udp('start')
+            self.start_autonomous_mission_sender()
+        elif self.control_mode == "internet" and self.firebase_control:
+            # Send start command to Firebase
+            autonomous_command = {
+                "run_status": True,
+                "vh_autonomous": True,
+                "wp_loaded_count": 0
+            }
+            self.firebase_control.send_autonomous_command(autonomous_command)
+            toast("Sent start command via Firebase")
 
     def send_stop_status(self, instance):
         self.last_status = 'stop'
-        self.send_status_udp('stop')
-        self.stop_autonomous_mission_sender()
+        if self.control_mode == "hardware":
+            self.send_status_udp('stop')
+            self.stop_autonomous_mission_sender()
+        elif self.control_mode == "internet" and self.firebase_control:
+            # Send stop command to Firebase
+            autonomous_command = {
+                "run_status": False,
+                "vh_autonomous": False,
+                "wp_loaded_count": 0
+            }
+            self.firebase_control.send_autonomous_command(autonomous_command)
+            toast("Sent stop command via Firebase")
 
     def start_autonomous_mission_sender(self):
         if self.autonomous_event is None:

@@ -1,0 +1,220 @@
+import json
+import threading
+import time
+from datetime import datetime
+from pyrebase import initialize_app
+from kivy.clock import Clock
+from kivy.properties import BooleanProperty, StringProperty
+
+class FirebaseControl:
+    def __init__(self, config):
+        """
+        Initialize Firebase control with configuration
+        
+        config: Firebase configuration dictionary
+        """
+        self.firebase = initialize_app(config)
+        self.db = self.firebase.database()
+        self.auth = self.firebase.auth()
+        
+        # Control state
+        self.control_mode = "hardware"  # "hardware" or "internet"
+        self.is_connected = False
+        self.last_heartbeat = None
+        
+        # Rover control data
+        self.joystick_data = {
+            "x_axis": 0.0,
+            "y_axis": 0.0,
+            "lift_speed": 0.0,
+            "clicked": False,
+            "release": False,
+            "centerliftknob": 0
+        }
+        
+        # Autonomous control data
+        self.autonomous_data = {
+            "run_status": False,
+            "vh_autonomous": False,
+            "wp_loaded_count": 0
+        }
+        
+        # System status
+        self.system_status = {
+            "control_mode": "hardware",
+            "firebase_connected": False,
+            "last_heartbeat": None,
+            "online": False,
+            "timestamp": None
+        }
+        
+        # Callbacks
+        self.on_joystick_update = None
+        self.on_autonomous_update = None
+        self.on_system_update = None
+        
+        # Start listening threads
+        self.start_listeners()
+    
+    def start_listeners(self):
+        """Start Firebase listeners for real-time updates"""
+        try:
+            # Listen for joystick data
+            joystick_path = FIREBASE_PATHS["joystick"].split("/")
+            self.joystick_stream = self.db.child(*joystick_path).stream(
+                self.on_joystick_data_update
+            )
+            
+            # Listen for autonomous data
+            autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+            self.autonomous_stream = self.db.child(*autonomous_path).stream(
+                self.on_autonomous_data_update
+            )
+            
+            # Listen for system status
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            self.system_stream = self.db.child(*system_path).stream(
+                self.on_system_status_update
+            )
+            
+            self.is_connected = True
+            self.update_system_status()
+            print("Firebase listeners started successfully")
+            
+        except Exception as e:
+            print(f"Error starting Firebase listeners: {e}")
+            self.is_connected = False
+    
+    def on_joystick_data_update(self, message):
+        """Handle joystick data updates from Firebase"""
+        try:
+            if message['event'] == 'put':
+                data = message['data']
+                if data:
+                    self.joystick_data.update(data)
+                    if self.on_joystick_update:
+                        Clock.schedule_once(lambda dt: self.on_joystick_update(data))
+                    print(f"Joystick data updated: {data}")
+        except Exception as e:
+            print(f"Error handling joystick update: {e}")
+    
+    def on_autonomous_data_update(self, message):
+        """Handle autonomous data updates from Firebase"""
+        try:
+            if message['event'] == 'put':
+                data = message['data']
+                if data:
+                    self.autonomous_data.update(data)
+                    if self.on_autonomous_update:
+                        Clock.schedule_once(lambda dt: self.on_autonomous_update(data))
+                    print(f"Autonomous data updated: {data}")
+        except Exception as e:
+            print(f"Error handling autonomous update: {e}")
+    
+    def on_system_status_update(self, message):
+        """Handle system status updates from Firebase"""
+        try:
+            if message['event'] == 'put':
+                data = message['data']
+                if data:
+                    self.system_status.update(data)
+                    if self.on_system_update:
+                        Clock.schedule_once(lambda dt: self.on_system_update(data))
+                    print(f"System status updated: {data}")
+        except Exception as e:
+            print(f"Error handling system status update: {e}")
+    
+    def send_joystick_data(self, joystick_data):
+        """Send joystick data to Firebase"""
+        try:
+            if self.control_mode == "internet" and self.is_connected:
+                joystick_path = FIREBASE_PATHS["joystick"].split("/")
+                self.db.child(*joystick_path).set(joystick_data)
+                print(f"Sent joystick data to Firebase: {joystick_data}")
+        except Exception as e:
+            print(f"Error sending joystick data: {e}")
+    
+    def send_autonomous_command(self, command_data):
+        """Send autonomous command to Firebase"""
+        try:
+            if self.control_mode == "internet" and self.is_connected:
+                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                self.db.child(*autonomous_path).set(command_data)
+                print(f"Sent autonomous command to Firebase: {command_data}")
+        except Exception as e:
+            print(f"Error sending autonomous command: {e}")
+    
+    def update_system_status(self):
+        """Update system status in Firebase"""
+        try:
+            if self.is_connected:
+                status = {
+                    "control_mode": self.control_mode,
+                    "firebase_connected": self.is_connected,
+                    "last_heartbeat": time.time(),
+                    "online": True,
+                    "timestamp": datetime.now().isoformat()
+                }
+                system_path = FIREBASE_PATHS["system_status"].split("/")
+                self.db.child(*system_path).set(status)
+                self.system_status.update(status)
+        except Exception as e:
+            print(f"Error updating system status: {e}")
+    
+    def set_control_mode(self, mode):
+        """Set control mode (hardware/internet)"""
+        if mode in ["hardware", "internet"]:
+            self.control_mode = mode
+            self.update_system_status()
+            print(f"Control mode set to: {mode}")
+            return True
+        return False
+    
+    def get_control_mode(self):
+        """Get current control mode"""
+        return self.control_mode
+    
+    def is_firebase_connected(self):
+        """Check if Firebase is connected"""
+        return self.is_connected
+    
+    def stop_listeners(self):
+        """Stop Firebase listeners"""
+        try:
+            if hasattr(self, 'joystick_stream'):
+                self.joystick_stream.close()
+            if hasattr(self, 'autonomous_stream'):
+                self.autonomous_stream.close()
+            if hasattr(self, 'system_stream'):
+                self.system_stream.close()
+            self.is_connected = False
+            print("Firebase listeners stopped")
+        except Exception as e:
+            print(f"Error stopping Firebase listeners: {e}")
+
+# Import configuration
+try:
+    from firebase_config import FIREBASE_CONFIG, FIREBASE_PATHS, ROVER_CONTROL_PARAMS
+except ImportError:
+    # Fallback configuration if config file doesn't exist
+    FIREBASE_CONFIG = {
+        "apiKey": "your-api-key-here",
+        "authDomain": "your-project-id.firebaseapp.com",
+        "databaseURL": "https://your-project-id-default-rtdb.firebaseio.com",
+        "projectId": "your-project-id",
+        "storageBucket": "your-project-id.appspot.com",
+        "messagingSenderId": "your-sender-id",
+        "appId": "your-app-id"
+    }
+    FIREBASE_PATHS = {
+        "joystick": "control/joystick",
+        "autonomous": "control/autonomous", 
+        "system_status": "system/status",
+        "sensors": "sensors/current"
+    }
+    ROVER_CONTROL_PARAMS = {
+        "joystick_deadzone": 0.1,
+        "max_speed": 100.0,
+        "update_frequency": 50,
+        "udp_timeout": 1.0
+    } 
