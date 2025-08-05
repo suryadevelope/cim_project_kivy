@@ -158,25 +158,22 @@ class Stream(EventDispatcher):
         """Get current control mode"""
         return self.control_mode
 
-    def send_joystick_to_firebase(self, joystick_data):
-        """Send joystick data to Firebase if in internet mode"""
+    def send_joystick_to_firebase(self, udp_command_string):
+        """Send formatted UDP command string to Firebase if in internet mode"""
         try:
             if self.control_mode == "internet" and self.firebase_control and FIREBASE_AVAILABLE:
-                # Convert joystick data to Firebase format
-                firebase_data = {
-                    "x_axis": joystick_data.get("x_axis", 0.0),
-                    "y_axis": joystick_data.get("y_axis", 0.0),
-                    "lift_speed": joystick_data.get("lift_speed", 0.0),
-                    "clicked": joystick_data.get("clicked", False),
-                    "release": joystick_data.get("release", False),
-                    "centerliftknob": joystick_data.get("centerliftknob", 0)
-                }
+                # Send the exact same UDP command string that would be sent in hardware mode
                 if hasattr(self.firebase_control, 'send_joystick_data'):
+                    # Send the formatted string directly
+                    firebase_data = {
+                        "udp_command": udp_command_string,
+                        "timestamp": time.time()
+                    }
                     success = self.firebase_control.send_joystick_data(firebase_data)
                     if success:
-                        print(f"Sent joystick data to Firebase: {firebase_data}")
+                        print(f"Sent UDP command string to Firebase: {udp_command_string}")
                     else:
-                        print("Failed to send joystick data to Firebase")
+                        print("Failed to send UDP command string to Firebase")
                 else:
                     print("Firebase control does not have send_joystick_data method")
             else:
@@ -187,7 +184,9 @@ class Stream(EventDispatcher):
                 elif not FIREBASE_AVAILABLE:
                     print("Firebase not available")
         except Exception as e:
-            print(f"Error sending joystick data to Firebase: {e}")
+            print(f"Error sending UDP command string to Firebase: {e}")
+            import traceback
+            traceback.print_exc()
 
     def updatevideoview(self,view):
         self.update_event = view
@@ -314,15 +313,7 @@ class Stream(EventDispatcher):
                     
                     # Send joystick data to Firebase if in internet mode and joystick_id == 0
                     if joystick_id == 0 and self.control_mode == "internet":
-                        joystick_data = {
-                            "x_axis": x_axis,
-                            "y_axis": y_axis,
-                            "lift_speed": lift_speed,
-                            "clicked": clicked,
-                            "release": release,
-                            "centerliftknob": centerliftknob
-                        }
-                        self.send_joystick_to_firebase(joystick_data)
+                        self.send_joystick_to_firebase(data)
 
                     pygame.time.wait(1)
                     

@@ -549,22 +549,31 @@ class MainScreen(Screen):
             print(f"Firebase joystick update: {joystick_data}")
             # Send joystick data to the rover via UDP if in internet mode
             if self.control_mode == "internet":
-                # Convert Firebase joystick data to UDP format
-                udp_data = {
-                    "x_axis": joystick_data.get("x_axis", 0.0),
-                    "y_axis": joystick_data.get("y_axis", 0.0),
-                    "lift_speed": joystick_data.get("lift_speed", 0.0),
-                    "clicked": joystick_data.get("clicked", False),
-                    "release": joystick_data.get("release", False),
-                    "centerliftknob": joystick_data.get("centerliftknob", 0)
-                }
-                # Send via existing UDP mechanism
-                self.send_joystick_udp(udp_data)
-                print(f"Sent Firebase joystick data via UDP: {udp_data}")
+                # Check if the data contains the UDP command string
+                if isinstance(joystick_data, dict) and "udp_command" in joystick_data:
+                    # Extract the UDP command string and send it directly
+                    udp_command = joystick_data["udp_command"]
+                    print(f"Received UDP command from Firebase: {udp_command}")
+                    # Send the command directly via UDP
+                    self.send_joystick_udp(udp_command)
+                else:
+                    # Fallback: convert old format joystick data
+                    print("Received old format joystick data, converting...")
+                    udp_data = {
+                        "x_axis": joystick_data.get("x_axis", 0.0),
+                        "y_axis": joystick_data.get("y_axis", 0.0),
+                        "lift_speed": joystick_data.get("lift_speed", 0.0),
+                        "clicked": joystick_data.get("clicked", False),
+                        "release": joystick_data.get("release", False),
+                        "centerliftknob": joystick_data.get("centerliftknob", 0)
+                    }
+                    self.send_joystick_udp(udp_data)
             else:
                 print(f"Not in internet mode (current mode: {self.control_mode})")
         except Exception as e:
             print(f"Error handling Firebase joystick update: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_firebase_autonomous_update(self, autonomous_data):
         """Handle autonomous data updates from Firebase"""
@@ -599,6 +608,17 @@ class MainScreen(Screen):
         """Send joystick data via UDP in the correct format"""
         try:
             import socket
+            
+            # Check if joystick_data is already a formatted string
+            if isinstance(joystick_data, str) and joystick_data.startswith("@"):
+                # It's already a formatted UDP command string, send it directly
+                print(f"Sending formatted UDP command string: {joystick_data}")
+                # Create UDP socket and send the command
+                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                udp_socket.sendto(joystick_data.encode(), ('192.168.1.10', 5005))
+                udp_socket.close()
+                print(f"Sent UDP command string directly: {joystick_data}")
+                return
             
             # Convert Firebase joystick data to the format expected by the rover
             x_axis = joystick_data.get("x_axis", 0.0)
@@ -658,20 +678,23 @@ class MainScreen(Screen):
             elif x_movement < 0:
                 direction = "4"  # Left
                 speed = abs(x_movement)
+            else:
+                speed = 0
+                direction = "115"
             
-            # Convert lift_speed to the expected range (20-100)
-            lift_speed_converted = max(20, min(100, int(lift_speed * 80 + 20)))
-            
-            # Format data in the expected format: "@{speed},{direction},{holdobject},{centerliftknob},{lift_speed}"
-            data = "@{},{},{},{},{}".format(speed, direction, holdobject, centerliftknob, lift_speed_converted)
+            # Format the command string
+            data = "@{},{},{},{},{}".format(speed, direction, holdobject, centerliftknob, lift_speed)
             
             # Send via UDP
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.sendto(data.encode('utf-8'), ('192.168.1.10', 5005))
+            udp_socket.sendto(data.encode(), ('192.168.1.10', 5005))
             udp_socket.close()
-            print(f"Sent joystick data via UDP: {data}")
+            print(f"Sent converted joystick data via UDP: {data}")
+            
         except Exception as e:
             print(f"Error sending joystick data via UDP: {e}")
+            import traceback
+            traceback.print_exc()
 
     def update_utilsdata_ui(self, instance, value):
         print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
