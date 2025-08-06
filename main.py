@@ -26,12 +26,85 @@
 #    - Mode-specific warnings
 #    - Real-time status updates
 #
+# 6. NEW FIREBASE DATA STRUCTURE SUPPORT
+#    - Nested data structure with sensors/current, control, system, remote_control, test
+#    - Mode-based data handling (hardware vs internet)
+#    - Automatic data structure detection and fallback
+#    - Enhanced validation for new data format
+#
 # Key Features:
 # - Automatic connectivity detection
 # - Data validation before processing
 # - Graceful degradation on connection loss
 # - Comprehensive logging for debugging
 # - User-friendly status indicators
+# - Support for new Firebase data structure:
+#   {
+#     "control": {
+#       "autonomous": {
+#         "mission": [[lat, lng], ...],
+#         "mission_count": 2,
+#         "status": "stop",
+#         "timestamp": 1754475451.436969
+#       },
+#       "joystick": {
+#         "timestamp": 1754475460.6133726,
+#         "udp_command": "@0,115,-1,0,72.08"
+#       }
+#     },
+#     "remote_control": {
+#       "centerliftknob": 0,
+#       "direction": 4,
+#       "holdobject": 0,
+#       "lift_speed": 0,
+#       "source": "local",
+#       "speed": 120,
+#       "timestamp": 1754475446.8491106
+#     },
+#     "sensors": {
+#       "current": {
+#         "autonomous": {
+#           "run_status": true,
+#           "vh_autonomous": true,
+#           "wp_loaded_count": 2,
+#           "wp_number": 1
+#         },
+#         "compass": "3.209400827603986",
+#         "gps": {
+#           "fix": true,
+#           "fix_type": "3D Fix",
+#           "hdop": 0.8,
+#           "lat": 17.4645105,
+#           "lng": 78.59409033333333,
+#           "num_sats": 10,
+#           "pdop": 2.5,
+#           "speed": 0,
+#           "vdop": 2.4
+#         },
+#         "packet_count": 692,
+#         "timestamp": 1754475446.376424,
+#         "utils": "#1=26.88=55.56"
+#       }
+#     },
+#     "system": {
+#       "status": {
+#         "control_mode": "internet",
+#         "firebase_connected": true,
+#         "last_heartbeat": 1754475448.9897358,
+#         "online": true,
+#         "timestamp": 1754475448.9897373
+#       }
+#     },
+#     "test": {
+#       "connection": {
+#         "status": "connected",
+#         "timestamp": 1754475368.637048
+#       },
+#       "health": {
+#         "timestamp": 1754472604.9269185
+#       }
+#     }
+#   }
 
 import ast
 import json
@@ -353,9 +426,9 @@ class MainScreen(Screen):
                 print("Attempting to initialize Firebase control...")
                 self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
                 # Set up callbacks
-                self.firebase_control.on_joystick_update = self.on_firebase_joystick_update
-                self.firebase_control.on_autonomous_update = self.on_firebase_autonomous_update
-                self.firebase_control.on_system_update = self.on_firebase_system_update
+                self.firebase_control.on_joystick_update = self.on_firebase_joystick_update  # type: ignore
+                self.firebase_control.on_autonomous_update = self.on_firebase_autonomous_update  # type: ignore
+                self.firebase_control.on_system_update = self.on_firebase_system_update  # type: ignore
                 print("Firebase control initialized successfully")
                 
                 # Test Firebase connection
@@ -835,6 +908,11 @@ class MainScreen(Screen):
         """Handle joystick data updates from Firebase"""
         try:
             print(f"Firebase joystick update: {joystick_data}")
+            
+            # Handle new nested structure
+            if isinstance(joystick_data, dict) and "joystick" in joystick_data:
+                joystick_data = joystick_data["joystick"]
+            
             # Send joystick data to the rover via UDP if in internet mode
             if self.control_mode == "internet":
                 # Check if the data contains the UDP command string
@@ -867,6 +945,10 @@ class MainScreen(Screen):
         """Handle autonomous data updates from Firebase with enhanced validation"""
         try:
             print(f"Firebase autonomous update received: {autonomous_data}")
+            
+            # Handle new nested structure
+            if isinstance(autonomous_data, dict) and "autonomous" in autonomous_data:
+                autonomous_data = autonomous_data["autonomous"]
             
             # Validate the autonomous data
             if not self.validate_autonomous_data(autonomous_data):
@@ -981,6 +1063,11 @@ class MainScreen(Screen):
         """Handle system status updates from Firebase"""
         try:
             print(f"Firebase system update: {system_data}")
+            
+            # Handle new nested structure
+            if isinstance(system_data, dict) and "status" in system_data:
+                system_data = system_data["status"]
+            
             # Update system status display
             control_mode = system_data.get("control_mode", "hardware")
             online = system_data.get("online", False)
@@ -1093,6 +1180,14 @@ class MainScreen(Screen):
         print(f"[DEBUG] update_utilsdata_ui called with value: {value}")
         print(f"[DEBUG] Value type: {type(value)}")
         
+        # Check if we should process this data based on control mode
+        if self.control_mode == "hardware" and not self.autonomous_data_exchange["hardware_connected"]:
+            print("[DEBUG] Hardware mode but not connected, skipping data update")
+            return
+        elif self.control_mode == "internet" and not self.autonomous_data_exchange["internet_connected"]:
+            print("[DEBUG] Internet mode but not connected, skipping data update")
+            return
+        
         # Parse JSON string if value is a string
         if isinstance(value, str):
             try:
@@ -1106,16 +1201,96 @@ class MainScreen(Screen):
                 print(f"[DEBUG] Failed to parse JSON: {value}")
                 return
         
-        # Battery and arm state logic
-        batvoltage = value.get("batvoltage", 0)
-        jetsonvoltage = value.get("jetsonvoltage", 0)
-        armstate = value.get("armstate", 0)
+        # Handle new Firebase data structure
+        # Check if this is the new structure with nested data
+        if "sensors" in value and "current" in value["sensors"]:
+            # New Firebase structure
+            sensors_data = value["sensors"]["current"]
+            print(f"[DEBUG] Processing new Firebase data structure: {sensors_data}")
+            
+            # Extract battery and arm state from utils
+            utils_str = sensors_data.get("utils", "")
+            if utils_str:
+                try:
+                    # Parse utils string like "#1=26.88=55.56"
+                    utils_parts = utils_str.split("=")
+                    if len(utils_parts) >= 3:
+                        batvoltage = float(utils_parts[1]) if len(utils_parts) > 1 else 0
+                        jetsonvoltage = float(utils_parts[2]) if len(utils_parts) > 2 else 0
+                    else:
+                        batvoltage = 0
+                        jetsonvoltage = 0
+                except (ValueError, IndexError):
+                    batvoltage = 0
+                    jetsonvoltage = 0
+            else:
+                batvoltage = 0
+                jetsonvoltage = 0
+            
+            # Extract GPS data
+            gps_data = sensors_data.get("gps", {})
+            if isinstance(gps_data, str):
+                try:
+                    gps_data = ast.literal_eval(gps_data)
+                except:
+                    gps_data = {}
+            
+            # Extract compass data
+            compass_data = sensors_data.get("compass", "0")
+            if isinstance(compass_data, str):
+                try:
+                    compass_data = float(compass_data)
+                except:
+                    compass_data = 0
+            
+            # Extract autonomous data
+            autonomous_data = sensors_data.get("autonomous", {})
+            if isinstance(autonomous_data, str):
+                try:
+                    autonomous_data = ast.literal_eval(autonomous_data)
+                except:
+                    autonomous_data = {}
+            
+            # Extract system status
+            system_data = value.get("system", {}).get("status", {})
+            
+        else:
+            # Legacy structure - handle as before
+            print(f"[DEBUG] Processing legacy data structure")
+            
+            # Battery and arm state logic
+            batvoltage = value.get("batvoltage", 0)
+            jetsonvoltage = value.get("jetsonvoltage", 0)
+            armstate = value.get("armstate", 0)
+            
+            # Handle GPS data
+            gps_data = value.get("gps", {})
+            if isinstance(gps_data, str):
+                try:
+                    gps_data = ast.literal_eval(gps_data)
+                except:
+                    gps_data = {}
+            
+            # Handle compass data
+            compass_data = value.get("compass", 0)
+            
+            # Handle autonomous data
+            autonomous_data = value.get("autonomous", {})
+            if isinstance(autonomous_data, str):
+                try:
+                    autonomous_data = ast.literal_eval(autonomous_data)
+                except:
+                    autonomous_data = {}
+            
+            system_data = {}
         
         print(f"[DEBUG] batvoltage: {batvoltage} (type: {type(batvoltage)})")
         print(f"[DEBUG] jetsonvoltage: {jetsonvoltage} (type: {type(jetsonvoltage)})")
-        print(f"[DEBUG] armstate: {armstate} (type: {type(armstate)})")
-        print(f"[DEBUG] All keys in value: {list(value.keys())}")
+        print(f"[DEBUG] gps_data: {gps_data}")
+        print(f"[DEBUG] compass_data: {compass_data}")
+        print(f"[DEBUG] autonomous_data: {autonomous_data}")
         
+        # Update battery status
         try:
             if float(batvoltage) <= 25:
                 self.img_src = './assets/bad_batt.png'
@@ -1133,31 +1308,27 @@ class MainScreen(Screen):
         except (ValueError, TypeError) as e:
             print(f"[DEBUG] Error processing jetsonvoltage: {e}")
             self.jetsonimg_src = './assets/bad_batt.png'
-            
-        try:
-            if int(armstate) == 1:
-                self.img_src_armstate = "./assets/no_home.png"
-            else:
+        
+        # Handle arm state (if available in new structure)
+        if "armstate" in value:
+            armstate = value.get("armstate", 0)
+            try:
+                if int(armstate) == 1:
+                    self.img_src_armstate = "./assets/no_home.png"
+                else:
+                    self.img_src_armstate = "./assets/at_home.png"
+            except (ValueError, TypeError) as e:
+                print(f"[DEBUG] Error processing armstate: {e}")
                 self.img_src_armstate = "./assets/at_home.png"
-        except (ValueError, TypeError) as e:
-            print(f"[DEBUG] Error processing armstate: {e}")
+        else:
+            # Default arm state for new structure
             self.img_src_armstate = "./assets/at_home.png"
 
-        # Handle GPS data
-        gpsvalue = value.get("gps")
-        if isinstance(gpsvalue, str):
-            try:
-                gpsvalue = ast.literal_eval(gpsvalue)
-            except:
-                gpsvalue = {}
-        elif not isinstance(gpsvalue, dict):
-            gpsvalue = {}
-
-        # GPS info
-        self.satcount = str(gpsvalue.get("num_sats", "0"))
-        self.irnss_accuracy = str(gpsvalue.get("irnss_stats", "N/A"))
-        self.fix_type = str(gpsvalue.get("fix_type", "N/A"))
-        self.gps_fix = bool(gpsvalue.get("fix", False))
+        # GPS info from new structure
+        self.satcount = str(gps_data.get("num_sats", "0"))
+        self.irnss_accuracy = str(gps_data.get("hdop", "N/A"))
+        self.fix_type = str(gps_data.get("fix_type", "N/A"))
+        self.gps_fix = bool(gps_data.get("fix", False))
         
         print(f"[DEBUG] Set satcount to: {self.satcount}")
         print(f"[DEBUG] Set irnss_accuracy to: {self.irnss_accuracy}")
@@ -1165,49 +1336,41 @@ class MainScreen(Screen):
         print(f"[DEBUG] Set gps_fix to: {self.gps_fix}")
         
         # GPS marker update
-        lat = gpsvalue.get("lat")
-        lng = gpsvalue.get("lng")
-        heading = value.get("compass")
+        lat = gps_data.get("lat")
+        lng = gps_data.get("lng")
+        heading = compass_data
         
-        # Handle Autonomous Navigation data
-        autonomous_data = value.get("autonomous", {})
-        if isinstance(autonomous_data, str):
-            try:
-                autonomous_data = ast.literal_eval(autonomous_data)
-            except:
-                autonomous_data = {}
-        elif not isinstance(autonomous_data, dict):
-            autonomous_data = {}
-            
-        print(f"[DEBUG] Autonomous data received: {autonomous_data}")
-            
         # Update autonomous navigation display
         self.update_autonomous_display(autonomous_data)
         
-        # print(f"[DEBUG] mapview type: {type(self.mapview)}")
-        # print(f"[DEBUG] lat: {lat}, lng: {lng}")
+        # Update compass widget
+        if hasattr(self, 'compass') and self.compass:
+            try:
+                compass_angle = float(compass_data) if compass_data else 0
+                self.compass.update_compass(compass_angle)
+                print(f"[DEBUG] Updated compass to: {compass_angle}")
+            except (ValueError, TypeError) as e:
+                print(f"[DEBUG] Error updating compass: {e}")
+        
+        # Update GPS marker on main thread
         from kivy.clock import Clock
         def _update_marker_on_main_thread(dt):
             from kivy_garden.mapview import MapView
             if lat is not None and lng is not None and isinstance(self.mapview, MapView):
                 try:
                     if self.gps_marker is None:
-                        # print("[DEBUG] Creating new GPS marker...")
                         self.gps_marker = RotatingMapMarker(lat=float(lat), lon=float(lng), source='./assets/rover_icon.png')
                         self.gps_marker.size = (30, 30)
                         if heading is not None:
                             self.gps_marker.heading = float(heading)
                         self.mapview.add_marker(self.gps_marker)
-                        # print(f"[DEBUG] Marker created at lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
                         self.mapview.center_on(float(lat), float(lng))
                     else:
-                        # print("[DEBUG] Updating existing GPS marker...")
                         self.gps_marker.lat = float(lat)
                         self.gps_marker.lon = float(lng)
                         self.gps_marker.size = (30, 30)
                         if heading is not None:
                             self.gps_marker.heading = float(heading)
-                        # print(f"[DEBUG] Marker updated to lat: {self.gps_marker.lat}, lon: {self.gps_marker.lon}")
                     self._last_gps_lat = float(lat)
                     self._last_gps_lon = float(lng)
                     if not self._user_interacting:
@@ -1215,12 +1378,14 @@ class MainScreen(Screen):
                 except Exception as e:
                     print(f"Error updating GPS marker: {e}")
         Clock.schedule_once(_update_marker_on_main_thread)
+        
         # Also update MapPlotScreen marker if it exists and is active
         app = App.get_running_app()
         if hasattr(app, 'root') and app.root is not None:
             mapplot_screen = app.root.get_screen('mapplot') if 'mapplot' in app.root.screen_names else None
             if mapplot_screen and hasattr(mapplot_screen, 'gps_marker') and app.root.current == 'mapplot':
                 mapplot_screen.update_gps_marker(lat, lng, heading)
+        
         # Update UI on main thread
         Clock.schedule_once(lambda dt: self.update_ui_on_main_thread())
 
@@ -1228,6 +1393,10 @@ class MainScreen(Screen):
         """Update autonomous navigation display with new data and connectivity status"""
         try:
             print(f"[DEBUG] Updating autonomous display with data: {autonomous_data}")
+            
+            # Handle new nested structure
+            if isinstance(autonomous_data, dict) and "autonomous" in autonomous_data:
+                autonomous_data = autonomous_data["autonomous"]
             
             # Validate autonomous data
             if not self.validate_autonomous_data(autonomous_data):

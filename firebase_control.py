@@ -96,9 +96,9 @@ class FirebaseControl:
             }
             
             # Callbacks
-            self.on_joystick_update = None
-            self.on_autonomous_update = None
-            self.on_system_update = None
+            self.on_joystick_update = None  # type: ignore
+            self.on_autonomous_update = None  # type: ignore
+            self.on_system_update = None  # type: ignore
             
             # Start listening threads
             self.start_listeners()
@@ -156,7 +156,38 @@ class FirebaseControl:
                 print("Invalid autonomous data: not a dictionary")
                 return False
             
-            # Check required fields
+            # Check if this is mission data (has mission field)
+            if "mission" in autonomous_data:
+                # This is mission data
+                if not isinstance(autonomous_data["mission"], list):
+                    print("Invalid mission data: mission must be a list")
+                    return False
+                
+                # Validate mission points
+                for i, point in enumerate(autonomous_data["mission"]):
+                    if not isinstance(point, (list, tuple)) or len(point) < 2:
+                        print(f"Invalid mission point {i}: must be list/tuple with at least 2 coordinates")
+                        return False
+                    try:
+                        lat = float(point[0])
+                        lon = float(point[1])
+                        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                            print(f"Invalid mission point {i}: coordinates out of range")
+                            return False
+                    except (ValueError, TypeError):
+                        print(f"Invalid mission point {i}: coordinates must be numeric")
+                        return False
+                
+                # Validate status field
+                if "status" in autonomous_data:
+                    status = autonomous_data["status"]
+                    if not isinstance(status, str) or status not in ["start", "stop", "pause"]:
+                        print("Invalid mission data: status must be 'start', 'stop', or 'pause'")
+                        return False
+                
+                return True
+            
+            # Check required fields for autonomous command data
             required_fields = ["run_status", "vh_autonomous", "wp_loaded_count"]
             for field in required_fields:
                 if field not in autonomous_data:
@@ -194,7 +225,7 @@ class FirebaseControl:
         except Exception as e:
             print(f"Error validating autonomous data: {e}")
             return False
-    
+
     def start_listeners(self):
         """Start Firebase listeners for real-time updates"""
         try:
@@ -225,6 +256,13 @@ class FirebaseControl:
                 self.on_system_status_update
             )
             
+            # Listen for sensors data (new structure)
+            sensors_path = FIREBASE_PATHS["sensors"].split("/")
+            print(f"Setting up sensors listener for path: {sensors_path}")
+            self.sensors_stream = self.db.child(*sensors_path).stream(
+                self.on_sensors_data_update
+            )
+            
             self.is_connected = True
             self.update_system_status()
             print("Firebase listeners started successfully")
@@ -237,53 +275,95 @@ class FirebaseControl:
             # Try to reconnect after a delay
             print("Scheduling reconnection attempt in 5 seconds...")
             threading.Timer(5.0, self.start_listeners).start()
-    
+
     def on_joystick_data_update(self, message):
         """Handle joystick data updates from Firebase"""
         try:
             if message['event'] == 'put':
                 data = message['data']
                 if data:
-                    self.joystick_data.update(data)
+                    # Handle new structure where joystick might be nested
+                    if isinstance(data, dict) and "joystick" in data:
+                        joystick_data = data["joystick"]
+                    else:
+                        joystick_data = data
+                    
+                    self.joystick_data.update(joystick_data)
                     if self.on_joystick_update:
-                        Clock.schedule_once(lambda dt: self.on_joystick_update(data))
-                    print(f"Joystick data updated: {data}")
+                        Clock.schedule_once(lambda dt: self.on_joystick_update(joystick_data))
+                    print(f"Joystick data updated: {joystick_data}")
         except Exception as e:
             print(f"Error handling joystick update: {e}")
-    
+
     def on_autonomous_data_update(self, message):
         """Handle autonomous data updates from Firebase with enhanced validation"""
         try:
             if message['event'] == 'put':
                 data = message['data']
                 if data:
-                    # Validate the autonomous data before processing
-                    if self.validate_autonomous_data(data):
-                        self.autonomous_data.update(data)
-                        if self.on_autonomous_update:
-                            Clock.schedule_once(lambda dt: self.on_autonomous_update(data))
-                        print(f"Autonomous data updated: {data}")
+                    # Handle new structure where autonomous might be nested
+                    if isinstance(data, dict) and "autonomous" in data:
+                        autonomous_data = data["autonomous"]
                     else:
-                        print(f"Invalid autonomous data received, ignoring: {data}")
+                        autonomous_data = data
+                    
+                    # Validate the autonomous data before processing
+                    if self.validate_autonomous_data(autonomous_data):
+                        self.autonomous_data.update(autonomous_data)
+                        if self.on_autonomous_update:
+                            Clock.schedule_once(lambda dt: self.on_autonomous_update(autonomous_data))
+                        print(f"Autonomous data updated: {autonomous_data}")
+                    else:
+                        print(f"Invalid autonomous data received, ignoring: {autonomous_data}")
                 else:
                     print("Empty autonomous data received")
         except Exception as e:
             print(f"Error handling autonomous update: {e}")
             import traceback
             traceback.print_exc()
-    
+
     def on_system_status_update(self, message):
         """Handle system status updates from Firebase"""
         try:
             if message['event'] == 'put':
                 data = message['data']
                 if data:
-                    self.system_status.update(data)
+                    # Handle new structure where system status might be nested
+                    if isinstance(data, dict) and "status" in data:
+                        system_data = data["status"]
+                    else:
+                        system_data = data
+                    
+                    self.system_status.update(system_data)
                     if self.on_system_update:
-                        Clock.schedule_once(lambda dt: self.on_system_update(data))
-                    print(f"System status updated: {data}")
+                        Clock.schedule_once(lambda dt: self.on_system_update(system_data))
+                    print(f"System status updated: {system_data}")
         except Exception as e:
             print(f"Error handling system status update: {e}")
+
+    def on_sensors_data_update(self, message):
+        """Handle sensors data updates from Firebase"""
+        try:
+            if message['event'] == 'put':
+                data = message['data']
+                if data:
+                    # Handle new structure where sensors might be nested
+                    if isinstance(data, dict) and "current" in data:
+                        sensors_data = data["current"]
+                    else:
+                        sensors_data = data
+                    
+                    # Update sensors data
+                    if hasattr(self, 'sensors_data'):
+                        self.sensors_data.update(sensors_data)
+                    else:
+                        self.sensors_data = sensors_data
+                    
+                    print(f"Sensors data updated: {sensors_data}")
+        except Exception as e:
+            print(f"Error handling sensors update: {e}")
+            import traceback
+            traceback.print_exc()
     
     def send_joystick_data(self, joystick_data):
         """Send joystick data to Firebase"""

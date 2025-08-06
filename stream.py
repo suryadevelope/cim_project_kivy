@@ -369,12 +369,36 @@ class Stream(EventDispatcher):
                                 }
                             
                             # Create complete update_utils dictionary and reassign to trigger property change
-                            complete_data = {
-                                "gps": json_data["gps"],
-                                "compass": json_data["compass"],
-                                "autonomous": json_data["autonomous"],
-                                **utils_data  # Include the parsed utils data
-                            }
+                            # Handle new Firebase data structure
+                            if "sensors" in json_data and "current" in json_data["sensors"]:
+                                # New Firebase structure
+                                sensors_data = json_data["sensors"]["current"]
+                                complete_data = {
+                                    "sensors": {
+                                        "current": {
+                                            "gps": sensors_data.get("gps", {}),
+                                            "compass": sensors_data.get("compass", "0"),
+                                            "autonomous": sensors_data.get("autonomous", {}),
+                                            "utils": utils_str,
+                                            "packet_count": sensors_data.get("packet_count", 0),
+                                            "timestamp": sensors_data.get("timestamp", time.time())
+                                        }
+                                    },
+                                    "system": {
+                                        "status": json_data.get("system", {}).get("status", {})
+                                    },
+                                    "control": json_data.get("control", {}),
+                                    "remote_control": json_data.get("remote_control", {}),
+                                    "test": json_data.get("test", {})
+                                }
+                            else:
+                                # Legacy structure
+                                complete_data = {
+                                    "gps": json_data["gps"],
+                                    "compass": json_data["compass"],
+                                    "autonomous": json_data["autonomous"],
+                                    **utils_data  # Include the parsed utils data
+                                }
                             
                             print(f"[DEBUG] Created update_utils with keys: {list(complete_data.keys())}")
                             print(f"[DEBUG] Utils data in complete_data: {complete_data.get('armstate', 'Not found')}, {complete_data.get('batvoltage', 'Not found')}, {complete_data.get('jetsonvoltage', 'Not found')}")
@@ -382,7 +406,6 @@ class Stream(EventDispatcher):
                             print(f"[DEBUG] Complete data structure: {complete_data}")
                             
                             # Force property update by serializing as JSON with timestamp to ensure uniqueness
-                            import time
                             complete_data_with_timestamp = complete_data.copy()
                             complete_data_with_timestamp['_timestamp'] = time.time()
                             self.update_utils = json.dumps(complete_data_with_timestamp)
