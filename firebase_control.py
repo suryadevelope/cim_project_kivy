@@ -86,6 +86,25 @@ class FirebaseControl:
                 "wp_loaded_count": 0
             }
             
+            # Mission commands data (new structure)
+            self.mission_commands = {
+                "mission": [],
+                "mission_count": 0,
+                "status": "stop",  # "start", "stop", "pause"
+                "timestamp": None
+            }
+            
+            # Navigation status data (new structure)
+            self.navigation_status = {
+                "active": False,
+                "current_waypoint": 0,
+                "distance_to_target": 0,
+                "heading": 0,
+                "speed": 0,
+                "timestamp": None,
+                "total_waypoints": 0
+            }
+            
             # System status
             self.system_status = {
                 "control_mode": "hardware",
@@ -98,6 +117,8 @@ class FirebaseControl:
             # Callbacks
             self.on_joystick_update = None  # type: ignore
             self.on_autonomous_update = None  # type: ignore
+            self.on_mission_commands_update = None  # type: ignore
+            self.on_navigation_status_update = None  # type: ignore
             self.on_system_update = None  # type: ignore
             
             # Start listening threads
@@ -226,6 +247,112 @@ class FirebaseControl:
             print(f"Error validating autonomous data: {e}")
             return False
 
+    def validate_mission_data(self, mission_data):
+        """Validate mission commands data structure and content"""
+        try:
+            if not isinstance(mission_data, dict):
+                print("Invalid mission data: not a dictionary")
+                return False
+            
+            # Check required fields
+            required_fields = ["mission", "mission_count", "status"]
+            for field in required_fields:
+                if field not in mission_data:
+                    print(f"Invalid mission data: missing required field '{field}'")
+                    return False
+            
+            # Validate mission field
+            if not isinstance(mission_data["mission"], list):
+                print("Invalid mission data: mission must be a list")
+                return False
+            
+            # Validate mission points
+            for i, point in enumerate(mission_data["mission"]):
+                if not isinstance(point, (list, tuple)) or len(point) < 2:
+                    print(f"Invalid mission point {i}: must be list/tuple with at least 2 coordinates")
+                    return False
+                try:
+                    lat = float(point[0])
+                    lon = float(point[1])
+                    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                        print(f"Invalid mission point {i}: coordinates out of range")
+                        return False
+                except (ValueError, TypeError):
+                    print(f"Invalid mission point {i}: coordinates must be numeric")
+                    return False
+            
+            # Validate mission_count
+            if not isinstance(mission_data["mission_count"], (int, float)):
+                print("Invalid mission data: mission_count must be numeric")
+                return False
+            
+            # Validate status
+            status = mission_data["status"]
+            if not isinstance(status, str) or status not in ["start", "stop", "pause"]:
+                print("Invalid mission data: status must be 'start', 'stop', or 'pause'")
+                return False
+            
+            # Validate optional timestamp
+            if "timestamp" in mission_data and not isinstance(mission_data["timestamp"], (int, float, type(None))):
+                print("Invalid mission data: timestamp must be numeric or None")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error validating mission data: {e}")
+            return False
+
+    def validate_navigation_data(self, nav_data):
+        """Validate navigation status data structure and content"""
+        try:
+            if not isinstance(nav_data, dict):
+                print("Invalid navigation data: not a dictionary")
+                return False
+            
+            # Check required fields
+            required_fields = ["active", "current_waypoint", "distance_to_target", "heading", "speed", "total_waypoints"]
+            for field in required_fields:
+                if field not in nav_data:
+                    print(f"Invalid navigation data: missing required field '{field}'")
+                    return False
+            
+            # Validate data types
+            if not isinstance(nav_data["active"], bool):
+                print("Invalid navigation data: active must be boolean")
+                return False
+            
+            if not isinstance(nav_data["current_waypoint"], (int, float)):
+                print("Invalid navigation data: current_waypoint must be numeric")
+                return False
+            
+            if not isinstance(nav_data["distance_to_target"], (int, float)):
+                print("Invalid navigation data: distance_to_target must be numeric")
+                return False
+            
+            if not isinstance(nav_data["heading"], (int, float)):
+                print("Invalid navigation data: heading must be numeric")
+                return False
+            
+            if not isinstance(nav_data["speed"], (int, float)):
+                print("Invalid navigation data: speed must be numeric")
+                return False
+            
+            if not isinstance(nav_data["total_waypoints"], (int, float)):
+                print("Invalid navigation data: total_waypoints must be numeric")
+                return False
+            
+            # Validate optional timestamp
+            if "timestamp" in nav_data and not isinstance(nav_data["timestamp"], (int, float, type(None))):
+                print("Invalid navigation data: timestamp must be numeric or None")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error validating navigation data: {e}")
+            return False
+
     def start_listeners(self):
         """Start Firebase listeners for real-time updates"""
         try:
@@ -247,6 +374,20 @@ class FirebaseControl:
             print(f"Setting up autonomous listener for path: {autonomous_path}")
             self.autonomous_stream = self.db.child(*autonomous_path).stream(
                 self.on_autonomous_data_update
+            )
+            
+            # Listen for mission commands (new)
+            mission_commands_path = FIREBASE_PATHS["mission_commands"].split("/")
+            print(f"Setting up mission commands listener for path: {mission_commands_path}")
+            self.mission_commands_stream = self.db.child(*mission_commands_path).stream(
+                self.on_mission_commands_update
+            )
+            
+            # Listen for navigation status (new)
+            navigation_status_path = FIREBASE_PATHS["navigation_status"].split("/")
+            print(f"Setting up navigation status listener for path: {navigation_status_path}")
+            self.navigation_status_stream = self.db.child(*navigation_status_path).stream(
+                self.on_navigation_status_update
             )
             
             # Listen for system status
@@ -362,6 +503,60 @@ class FirebaseControl:
                     print(f"Sensors data updated: {sensors_data}")
         except Exception as e:
             print(f"Error handling sensors update: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def on_mission_commands_update(self, message):
+        """Handle mission commands updates from Firebase"""
+        try:
+            if message['event'] == 'put':
+                data = message['data']
+                if data:
+                    # Handle new structure where mission_commands might be nested
+                    if isinstance(data, dict) and "mission_commands" in data:
+                        mission_data = data["mission_commands"]
+                    else:
+                        mission_data = data
+                    
+                    # Validate mission data
+                    if self.validate_mission_data(mission_data):
+                        self.mission_commands.update(mission_data)
+                        if self.on_mission_commands_update:
+                            Clock.schedule_once(lambda dt: self.on_mission_commands_update(mission_data))
+                        print(f"Mission commands updated: {mission_data}")
+                    else:
+                        print(f"Invalid mission commands data received, ignoring: {mission_data}")
+                else:
+                    print("Empty mission commands data received")
+        except Exception as e:
+            print(f"Error handling mission commands update: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def on_navigation_status_update(self, message):
+        """Handle navigation status updates from Firebase"""
+        try:
+            if message['event'] == 'put':
+                data = message['data']
+                if data:
+                    # Handle new structure where navigation_status might be nested
+                    if isinstance(data, dict) and "navigation_status" in data:
+                        nav_data = data["navigation_status"]
+                    else:
+                        nav_data = data
+                    
+                    # Validate navigation data
+                    if self.validate_navigation_data(nav_data):
+                        self.navigation_status.update(nav_data)
+                        if self.on_navigation_status_update:
+                            Clock.schedule_once(lambda dt: self.on_navigation_status_update(nav_data))
+                        print(f"Navigation status updated: {nav_data}")
+                    else:
+                        print(f"Invalid navigation status data received, ignoring: {nav_data}")
+                else:
+                    print("Empty navigation status data received")
+        except Exception as e:
+            print(f"Error handling navigation status update: {e}")
             import traceback
             traceback.print_exc()
     
@@ -560,3 +755,53 @@ class FirebaseControl:
             print("Firebase listeners stopped")
         except Exception as e:
             print(f"Error stopping Firebase listeners: {e}") 
+    
+    def send_mission_commands(self, mission_data):
+        """Send mission commands to Firebase with validation"""
+        try:
+            if self.control_mode == "internet" and self.is_connected:
+                # Validate the mission data before sending
+                if self.validate_mission_data(mission_data):
+                    mission_path = FIREBASE_PATHS["mission_commands"].split("/")
+                    self.db.child(*mission_path).set(mission_data)
+                    print(f"Sent mission commands to Firebase: {mission_data}")
+                    return True
+                else:
+                    print(f"Invalid mission commands data, not sending: {mission_data}")
+                    return False
+            else:
+                if self.control_mode != "internet":
+                    print(f"Not in internet mode (current mode: {self.control_mode})")
+                elif not self.is_connected:
+                    print("Firebase not connected")
+                return False
+        except Exception as e:
+            print(f"Error sending mission commands: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def send_navigation_status(self, nav_data):
+        """Send navigation status to Firebase with validation"""
+        try:
+            if self.control_mode == "internet" and self.is_connected:
+                # Validate the navigation data before sending
+                if self.validate_navigation_data(nav_data):
+                    nav_path = FIREBASE_PATHS["navigation_status"].split("/")
+                    self.db.child(*nav_path).set(nav_data)
+                    print(f"Sent navigation status to Firebase: {nav_data}")
+                    return True
+                else:
+                    print(f"Invalid navigation status data, not sending: {nav_data}")
+                    return False
+            else:
+                if self.control_mode != "internet":
+                    print(f"Not in internet mode (current mode: {self.control_mode})")
+                elif not self.is_connected:
+                    print("Firebase not connected")
+                return False
+        except Exception as e:
+            print(f"Error sending navigation status: {e}")
+            import traceback
+            traceback.print_exc()
+            return False 
