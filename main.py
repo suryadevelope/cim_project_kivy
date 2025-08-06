@@ -1093,7 +1093,6 @@ class MainScreen(Screen):
         except Exception as e:
             print(f"Error handling Firebase system update: {e}")
     
-<<<<<<< HEAD
     def on_firebase_mission_commands_update(self, mission_data):
         """Handle mission commands updates from Firebase"""
         try:
@@ -1263,8 +1262,7 @@ class MainScreen(Screen):
             import traceback
             traceback.print_exc()
 
-=======
->>>>>>> parent of e361809 (3.0.14)
+
     def send_joystick_udp(self, joystick_data):
         """Send joystick data via UDP in the correct format"""
         try:
