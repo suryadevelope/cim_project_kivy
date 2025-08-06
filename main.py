@@ -1050,18 +1050,27 @@ class MainScreen(Screen):
                     print(f"Error updating MapPlotScreen with mission data: {e}")
             # Update autonomous status
             if status == "start":
-                self.last_status = "start"
-                if not self.autonomous_event:
-                    self.start_autonomous_mission_sender()
-                print("Mission started from Firebase")
+                if self.last_status != "start":
+                    self.last_status = "start"
+                    if not self.autonomous_event:
+                        self.start_autonomous_mission_sender()
+                    print("Mission started from Firebase")
+                else:
+                    print("Mission already started, ignoring redundant start command")
             elif status == "stop":
-                self.last_status = "stop"
-                if self.autonomous_event:
-                    self.stop_autonomous_mission_sender()
-                print("Mission stopped from Firebase")
+                if self.last_status != "stop":
+                    self.last_status = "stop"
+                    if self.autonomous_event:
+                        self.stop_autonomous_mission_sender()
+                    print("Mission stopped from Firebase")
+                else:
+                    print("Mission already stopped, ignoring redundant stop command")
             elif status == "pause":
-                self.last_status = "pause"
-                print("Mission paused from Firebase")
+                if self.last_status != "pause":
+                    self.last_status = "pause"
+                    print("Mission paused from Firebase")
+                else:
+                    print("Mission already paused, ignoring redundant pause command")
             # Update UI to reflect mission status
             self.update_autonomous_display({
                 "run_status": status == "start",
@@ -1165,18 +1174,27 @@ class MainScreen(Screen):
             
             # Handle mission status
             if status == "start":
-                self.last_status = "start"
-                if not self.autonomous_event:
-                    self.start_autonomous_mission_sender()
-                print("Mission started from Firebase")
+                if self.last_status != "start":
+                    self.last_status = "start"
+                    if not self.autonomous_event:
+                        self.start_autonomous_mission_sender()
+                    print("Mission started from Firebase")
+                else:
+                    print("Mission already started, ignoring redundant start command")
             elif status == "stop":
-                self.last_status = "stop"
-                if self.autonomous_event:
-                    self.stop_autonomous_mission_sender()
-                print("Mission stopped from Firebase")
+                if self.last_status != "stop":
+                    self.last_status = "stop"
+                    if self.autonomous_event:
+                        self.stop_autonomous_mission_sender()
+                    print("Mission stopped from Firebase")
+                else:
+                    print("Mission already stopped, ignoring redundant stop command")
             elif status == "pause":
-                self.last_status = "pause"
-                print("Mission paused from Firebase")
+                if self.last_status != "pause":
+                    self.last_status = "pause"
+                    print("Mission paused from Firebase")
+                else:
+                    print("Mission already paused, ignoring redundant pause command")
             
             # Update UI to reflect mission status
             self.update_autonomous_display({
@@ -2238,12 +2256,18 @@ class MainScreen(Screen):
         if self.autonomous_event is None:
             from kivy.clock import Clock
             self.autonomous_event = Clock.schedule_interval(self.send_autonomous_mission, 1.0)
+            print("✅ Autonomous mission sender started")
+        else:
+            print("⚠️ Autonomous mission sender already running")
 
     def stop_autonomous_mission_sender(self):
         if self.autonomous_event is not None:
             from kivy.clock import Clock
             Clock.unschedule(self.autonomous_event)
             self.autonomous_event = None
+            print("🛑 Autonomous mission sender stopped")
+        else:
+            print("⚠️ Autonomous mission sender not running")
 
     def send_autonomous_mission(self, dt):
         # Get mission points from MapPlotScreen
@@ -2256,7 +2280,56 @@ class MainScreen(Screen):
                     mission_points = [coords for m, coords in mapplot_screen.user_markers]
             except Exception:
                 pass
+        
         status = self.last_status if hasattr(self, 'last_status') else 'stop'
+        
+        # Check if we need to send an update
+        # Only send if status changed or mission points changed
+        current_mission_hash = hash(str(mission_points))
+        if not hasattr(self, '_last_mission_hash'):
+            self._last_mission_hash = None
+        if not hasattr(self, '_last_sent_status'):
+            self._last_sent_status = None
+        if not hasattr(self, '_last_send_time'):
+            self._last_send_time = 0
+        if not hasattr(self, '_stop_status_start_time'):
+            self._stop_status_start_time = None
+            
+        status_changed = status != self._last_sent_status
+        mission_changed = current_mission_hash != self._last_mission_hash
+        
+        # Track when status becomes "stop" to auto-stop sender after a delay
+        if status == "stop" and self._stop_status_start_time is None:
+            import time
+            self._stop_status_start_time = time.time()
+        elif status != "stop":
+            self._stop_status_start_time = None
+        
+        # Auto-stop sender if status has been "stop" for more than 10 seconds
+        if status == "stop" and self._stop_status_start_time is not None:
+            import time
+            if time.time() - self._stop_status_start_time > 10.0:
+                print("🔄 Auto-stopping autonomous mission sender (status 'stop' for >10s)")
+                self.stop_autonomous_mission_sender()
+                return
+        
+        # Add cooldown to prevent rapid status changes (minimum 2 seconds between sends)
+        import time
+        current_time = time.time()
+        time_since_last_send = current_time - self._last_send_time
+        
+        # Only send update if something actually changed and enough time has passed
+        if not status_changed and not mission_changed:
+            return
+            
+        # If status is "start" and we just sent it recently, don't send again
+        if status == "start" and self._last_sent_status == "start" and time_since_last_send < 5.0:
+            return
+            
+        # If status is "stop" and we just sent it recently, don't send again
+        if status == "stop" and self._last_sent_status == "stop" and time_since_last_send < 2.0:
+            return
+            
         data = json.dumps({"mission": mission_points, "status": status})
         
         # Send via UDP (hardware mode)
@@ -2274,6 +2347,10 @@ class MainScreen(Screen):
                 except Exception as e:
                     print(f"Autonomous mission send error: {e}")
             threading.Thread(target=send, args=(data, host, port), daemon=True).start()
+            # Update tracking variables for UDP send
+            self._last_sent_status = status
+            self._last_mission_hash = current_mission_hash
+            self._last_send_time = current_time
         
         # Send via Firebase (internet mode)
         elif self.control_mode == "internet" and self.firebase_control:
@@ -2291,6 +2368,10 @@ class MainScreen(Screen):
                 success = self.firebase_control.send_autonomous_mission(mission_data)
                 if success:
                     print(f"Successfully sent autonomous mission to Firebase: {len(mission_points)} waypoints")
+                    # Update tracking variables only on successful send
+                    self._last_sent_status = status
+                    self._last_mission_hash = current_mission_hash
+                    self._last_send_time = current_time
                 else:
                     print("Failed to send autonomous mission to Firebase")
             except Exception as e:

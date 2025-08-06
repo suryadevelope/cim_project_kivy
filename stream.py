@@ -1,12 +1,13 @@
 import signal
 import subprocess
 import sys
-from threading import Thread
+from threading import Thread, Lock
 import time
 import pygame
 import socket
 import tkinter as tk
 import json
+import ast
 from kivy.clock import Clock
 from kivy.event import EventDispatcher
 from kivymd.toast import toast
@@ -21,18 +22,16 @@ except ImportError:
 
 from kivy.properties import NumericProperty, ObjectProperty, StringProperty
 
-# root = tk.Tk()
-
+# Network Configuration
 Stream_2_IP = "192.168.1.10"
 Stream_2_PORT = 5005
 LISTEN_IP = "0.0.0.0"  # Listen on all interfaces
 LISTEN_PORT = 5006
 
-
-
 print("main.py started")
 
 def is_port_in_use(port):
+    """Check if a port is in use"""
     try:
         output = subprocess.check_output(["netstat", "-tuln"])
         lines = output.decode("utf-8").split("\n")
@@ -47,415 +46,406 @@ def is_port_in_use(port):
         return None  # Error occurred
 
 def close_port_if_running(port):
+    """Close port if it's in use"""
     try:
         subprocess.run(["fuser", "-k", f"{port}/tcp"])
         print(f"Closed port {port}.")
     except Exception as e:
         print(f"Error closing port {port}: {e}")
 
-
+# Port management
 port_status = is_port_in_use(LISTEN_PORT)
 if port_status is None:
-
     print(f"An error occurred while checking port {LISTEN_PORT}.")
-    
 elif port_status:
     print(f"Port {LISTEN_PORT} is in use.")
-    
     close_port_if_running(LISTEN_PORT)
 else:
     print(f"Port {LISTEN_PORT} is not in use.")
-    
-
-
-
 
 # Initialize the two UDP sockets
 Stream2_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 Listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-Listen_socket.bind((LISTEN_IP, LISTEN_PORT))
+Listen_socket.settimeout(1.0)  # Add timeout for better error handling
 
+try:
+    Listen_socket.bind((LISTEN_IP, LISTEN_PORT))
+    print(f"UDP listener bound to {LISTEN_IP}:{LISTEN_PORT}")
+except Exception as e:
+    print(f"Error binding UDP socket: {e}")
 
 # Define a signal handler function
 def signal_handler(sig, frame):
     print('Closing socket...')
-    Listen_socket.close()
+    try:
+        Listen_socket.close()
+        Stream2_socket.close()
+    except:
+        pass
     sys.exit(0)
 
 # Register the signal handler for termination signals
 signal.signal(signal.SIGINT, signal_handler)  # Handles Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler) # Handles termination signal
 
-
-
 class Stream(EventDispatcher):
     update_event = NumericProperty(0)
     update_utils = StringProperty("{}")
 
-    dataconfirm={
-        "compass":False,
-        "jetsonvoltage":0
+    dataconfirm = {
+        "compass": False,
+        "jetsonvoltage": 0
     }
 
     videosections = None
-
+    compasswidget = None
+    control_mode = "hardware"  # Default control mode
+    firebase_control = None
+    data_lock = Lock()  # Thread safety for data updates
+    
     def __init__(self, **kwargs):
         super(Stream, self).__init__(**kwargs)
-        self.compasswidget = None
-        self.control_mode = "hardware"  # Default control mode
-        self.firebase_control = None
         
         # Initialize Firebase control if available
         if FIREBASE_AVAILABLE:
             try:
-                print("Stream: Attempting to initialize Firebase control...")
                 from firebase_config import FIREBASE_CONFIG
-                # Import FirebaseControl locally to avoid linter issues
-                try:
-                    from firebase_control import FirebaseControl
-                    self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
-                    print("Firebase control initialized in Stream")
-                except ImportError as e:
-                    self.firebase_control = None
-                    print(f"FirebaseControl not available in Stream: {e}")
-                except Exception as e:
-                    self.firebase_control = None
-                    print(f"Error initializing FirebaseControl in Stream: {e}")
-                    import traceback
-                    traceback.print_exc()
+                self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
+                print("Firebase control initialized in Stream")
             except Exception as e:
-                print(f"Error importing Firebase config in Stream: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"Error initializing Firebase control: {e}")
                 self.firebase_control = None
-        else:
-            print("Firebase not available in Stream - FIREBASE_AVAILABLE is False")
         
-        # Start threads
-        try:
-            self.thread = Thread(target=self.runjoystick, daemon=True)
-            self.thread.start()
-            print("Joystick thread started")
-            
-            self.listen_thread = Thread(target=self.listen_udp, daemon=True)
-            self.listen_thread.start()
-            print("UDP listen thread started")
-        except Exception as e:
-            print(f"Error starting threads in Stream: {e}")
+        # Start UDP listener thread
+        self.listener_thread = Thread(target=self.listen_udp, daemon=True)
+        self.listener_thread.start()
+        
+        # Start joystick thread if in hardware mode
+        if self.control_mode == "hardware":
+            self.joystick_thread = Thread(target=self.runjoystick, daemon=True)
+            self.joystick_thread.start()
 
     def set_control_mode(self, mode):
-        """Set the control mode (hardware/internet)"""
-        if mode in ["hardware", "internet"]:
+        """Set control mode (hardware or internet)"""
+        with self.data_lock:
             self.control_mode = mode
             print(f"Stream control mode set to: {mode}")
+            
             # Update Firebase control mode if available
-            if self.firebase_control and hasattr(self.firebase_control, 'set_control_mode'):
+            if self.firebase_control:
                 self.firebase_control.set_control_mode(mode)
-            return True
-        return False
 
     def get_control_mode(self):
         """Get current control mode"""
-        return self.control_mode
+        with self.data_lock:
+            return self.control_mode
 
     def send_joystick_to_firebase(self, udp_command_string):
-        """Send formatted UDP command string to Firebase if in internet mode"""
+        """Send joystick data to Firebase"""
+        if self.firebase_control and self.control_mode == "internet":
+            try:
+                # Parse UDP command and convert to joystick data
+                joystick_data = self.parse_udp_command(udp_command_string)
+                self.firebase_control.send_joystick_data(joystick_data)
+                print(f"Sent joystick data to Firebase: {joystick_data}")
+            except Exception as e:
+                print(f"Error sending joystick data to Firebase: {e}")
+
+    def parse_udp_command(self, udp_command):
+        """Parse UDP command string to joystick data"""
         try:
-            if self.control_mode == "internet" and self.firebase_control and FIREBASE_AVAILABLE:
-                # Send the exact same UDP command string that would be sent in hardware mode
-                if hasattr(self.firebase_control, 'send_joystick_data'):
-                    # Send the formatted string directly
-                    firebase_data = {
-                        "udp_command": udp_command_string,
+            # Format: "@speed,direction,holdobject,centerliftknob,lift_speed"
+            if udp_command.startswith("@"):
+                parts = udp_command[1:].split(",")
+                if len(parts) >= 5:
+                    speed = int(parts[0])
+                    direction = int(parts[1])
+                    holdobject = int(parts[2])
+                    centerliftknob = int(parts[3])
+                    lift_speed = float(parts[4])
+                    
+                    # Convert to joystick format
+                    return {
+                        "speed": speed,
+                        "direction": direction,
+                        "holdobject": holdobject,
+                        "centerliftknob": centerliftknob,
+                        "lift_speed": lift_speed,
                         "timestamp": time.time()
                     }
-                    success = self.firebase_control.send_joystick_data(firebase_data)
-                    if success:
-                        print(f"Sent UDP command string to Firebase: {udp_command_string}")
-                    else:
-                        print("Failed to send UDP command string to Firebase")
-                else:
-                    print("Firebase control does not have send_joystick_data method")
-            else:
-                if self.control_mode != "internet":
-                    print(f"Not in internet mode (current mode: {self.control_mode})")
-                elif not self.firebase_control:
-                    print("Firebase control not initialized")
-                elif not FIREBASE_AVAILABLE:
-                    print("Firebase not available")
         except Exception as e:
-            print(f"Error sending UDP command string to Firebase: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"Error parsing UDP command: {e}")
+        
+        return {}
 
-    def updatevideoview(self,view):
-        self.update_event = view
-            # print(self.videosections[view])
+    def updatevideoview(self, view):
+        """Update video view"""
+        if self.videosections and view < len(self.videosections):
+            self.videosections[view].texture = None
 
-
-    # Define a function to map joystick input to movement values
     def map_input_to_movement(self, value, dead_zone=0.1):
-        # Apply dead zone correction
+        """Apply dead zone correction and map input to movement"""
         if abs(value) < dead_zone:
             return 0
-        
-        # Scale joystick input to desired movement range
         movement = int(value * 255)
-        if movement > 255:
-            movement = 255
-        elif movement < -255:
-            movement = -255
-        
-        return movement
+        return max(-255, min(255, movement))
 
-    # Define a function to send UDP packets to the specified destination
     def send_udp_packet(self, socket, data, ip, port):
+        """Send UDP packet with error handling"""
         try:
             socket.sendto(data.encode(), (ip, port))
-            print(f"UDP packet sent to {ip}:{port} - {data}")
+            return True
         except Exception as e:
-            if(str(e).startswith("[Errno 101] Network is unreachable")):
-                print("Please connect the router and restart the app")
-                toast("Please connect the router and restart the app")
-            else:
-                print(f"Error sending UDP packet: {e}")
+            print(f"Error sending UDP packet: {e}")
+            return False
 
-    def map_value(self,value, in_min, in_max, out_min, out_max):
-        # Map the value from the input range to the output range
+    def map_value(self, value, in_min, in_max, out_min, out_max):
+        """Map the value from the input range to the output range"""
         return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
-
-
     def runjoystick(self): 
-        # Initialize the pygame library and joysticks
-        
-           
-        while True:
-            try:
-                pygame.init()
-                pygame.joystick.init()   
-                for joystick_id in range(pygame.joystick.get_count()):
-                    joystick = pygame.joystick.Joystick(joystick_id)
-                    joystick.init()
-                    joystick_name = joystick.get_name()
-
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            pygame.quit()
-                            exit()
-
-                    x_axis = joystick.get_axis(0)
-                    y_axis = joystick.get_axis(1)
-                
-                    lift_speed = round(self.map_value(joystick.get_axis(3), 1, -1, 20, 100),2) 
+        """Initialize the pygame library and joysticks"""
+        try:
+            pygame.init()
+            pygame.joystick.init()
             
-                    clicked = joystick.get_button(0)
-                    release = joystick.get_button(1)
-
-                    centerliftknob = joystick.get_hat(0)[1]
-
-                    holdobject = -1
-
-                    if(clicked ==1 and release==0):
-                        holdobject = 1
-                        self.updatevideoview(2)
-
-                    elif(clicked ==1 and release==1):
-                        holdobject=0
-                        self.updatevideoview(2)
-
-                    if(holdobject==-1):
-                        self.updatevideoview(-1)
-
-                    x_movement = self.map_input_to_movement(x_axis, dead_zone=0.2)  # Example dead zone of 0.1
-                    y_movement = self.map_input_to_movement(y_axis, dead_zone=0.2)  # Example dead zone of 0.1
-
-                    speed = (abs(y_movement) + abs(x_movement))/2
-
-                    # Check diagonal directions first
-                    if y_movement < 0 and x_movement < 0:
-                        direction = "7"  # Forward-left
-                        self.updatevideoview(0)
-                    elif y_movement < 0 and x_movement > 0:
-                        direction = "9"  # Forward-right
-                        self.updatevideoview(0)
-                    elif y_movement > 0 and x_movement < 0:
-                        direction = "1"  # Backward-left
-                        self.updatevideoview(1)
-                    elif y_movement > 0 and x_movement > 0:
-                        direction = "3"  # Backward-right
-                        self.updatevideoview(1)
-                    elif y_movement > 0:
-                        speed = abs(y_movement)
-                        direction = "5"#backward
-                        self.updatevideoview(1)
-                    elif y_movement < 0:
-                        speed = abs(y_movement)
-                        direction = "8"#forward
-                        self.updatevideoview(0)
-                    elif x_movement > 0:
-                        speed = abs(x_movement)
-                        direction = "6"#right
-                    elif x_movement < 0:
-                        speed = abs(x_movement)
-                        direction = "4"#left
-                    else:
-                        speed = 0
-                        direction = "115"
-                        self.updatevideoview(-2)
-
-                    data = "@{},{},{},{},{}".format(speed, direction, holdobject,centerliftknob,lift_speed)
-
-                    # Only send UDP data if in hardware mode and joystick_id == 0
-                    if joystick_id == 0 and self.control_mode == "hardware":
-                        self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
-                        print(f"Sent UDP data (hardware mode): {data}")
-                    
-                    # Send joystick data to Firebase if in internet mode and joystick_id == 0
-                    if joystick_id == 0 and self.control_mode == "internet":
-                        self.send_joystick_to_firebase(data)
-
-                    pygame.time.wait(1)
-                    
-            except Exception as e:
-                print(f"Error in runjoystick: {e}")
-                time.sleep(1)  # Wait before retrying
+            joystick_count = pygame.joystick.get_count()
+            if joystick_count == 0:
+                print("No joystick connected.")
+                return
+            
+            joystick = pygame.joystick.Joystick(0)
+            joystick.init()
+            
+            print(f"Joystick initialized: {joystick.get_name()}")
+            
+            while True:
+                pygame.event.pump()
+                
+                # Read joystick values
+                x_axis = joystick.get_axis(0)  # Left/Right
+                y_axis = joystick.get_axis(1)  # Forward/Backward
+                lift_speed = joystick.get_axis(2) if joystick.get_numaxes() > 2 else 0
+                
+                # Read buttons
+                clicked = joystick.get_button(0)  # Button 0
+                release = joystick.get_button(1)  # Button 1
+                
+                # Read hat (D-pad)
+                hat = joystick.get_hat(0) if joystick.get_numhats() > 0 else (0, 0)
+                centerliftknob = hat[1]  # Up/Down from hat
+                
+                # Map joystick values to movement
+                x_movement = self.map_input_to_movement(x_axis, dead_zone=0.2)
+                y_movement = self.map_input_to_movement(y_axis, dead_zone=0.2)
+                
+                # Determine direction and speed
+                speed = 0
+                direction = "115"  # Stop
+                holdobject = -1
+                
+                # Handle button states
+                if clicked and not release:
+                    holdobject = 1
+                elif clicked and release:
+                    holdobject = 0
+                
+                # Determine direction based on movement
+                if y_movement < 0 and x_movement < 0:
+                    direction = "7"  # Forward-left
+                    speed = abs(y_movement)
+                elif y_movement < 0 and x_movement > 0:
+                    direction = "9"  # Forward-right
+                    speed = abs(y_movement)
+                elif y_movement > 0 and x_movement < 0:
+                    direction = "1"  # Backward-left
+                    speed = abs(y_movement)
+                elif y_movement > 0 and x_movement > 0:
+                    direction = "3"  # Backward-right
+                    speed = abs(y_movement)
+                elif y_movement > 0:
+                    direction = "5"  # Backward
+                    speed = abs(y_movement)
+                elif y_movement < 0:
+                    direction = "8"  # Forward
+                    speed = abs(y_movement)
+                elif x_movement > 0:
+                    direction = "6"  # Right
+                    speed = abs(x_movement)
+                elif x_movement < 0:
+                    direction = "4"  # Left
+                    speed = abs(x_movement)
+                else:
+                    speed = 0
+                    direction = "115"
+                
+                # Format the command string
+                data = "@{},{},{},{},{}".format(speed, direction, holdobject, centerliftknob, lift_speed)
+                
+                # Send via UDP
+                self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
+                
+                # Send to Firebase if in internet mode
+                if self.control_mode == "internet":
+                    self.send_joystick_to_firebase(data)
+                
+                time.sleep(0.02)  # 50Hz update rate
+                
+        except Exception as e:
+            print(f"Error in joystick thread: {e}")
+        finally:
+            pygame.quit()
 
     def listen_udp(self):
-        while True:
+        """Listen for UDP data from rover with improved error handling"""
+        print("Starting UDP listener thread...")
         
+        while True:
             try:
                 data, addr = Listen_socket.recvfrom(1024)
-                compassdata = str(data.decode())
-
-                if(compassdata!='None'):
-                    # Try to parse as JSON first (new format)
-                    try:
-                        json_data = json.loads(compassdata)
-                        print("Received JSON data:", json_data)
-                        
-                        # Handle new JSON data structure
-                        if "utils" in json_data and "compass" in json_data and "gps" in json_data and "autonomous" in json_data:
-                            # Parse utils data (format: "#1=26.66=55.56")
-                            utils_str = json_data["utils"]
-                            utils_data = {}
-                            
-                            print(f"[DEBUG] Parsing utils string: '{utils_str}'")
-                            
-                            # Try to parse utils string if it's in the expected format
-                            if utils_str and utils_str.strip() and utils_str.startswith("#"):
-                                parts = utils_str[1:].split("=")
-                                print(f"[DEBUG] Split parts: {parts}")
-                                if len(parts) >= 3:
-                                    utils_data = {
-                                        "armstate": parts[0],
-                                        "batvoltage": parts[1],
-                                        "jetsonvoltage": parts[2]
-                                    }
-                                    print(f"[DEBUG] Parsed utils data: {utils_data}")
-                                else:
-                                    print("Utils data format incorrect, using default values")
-                                    utils_data = {
-                                        "armstate": "0",
-                                        "batvoltage": "0.0",
-                                        "jetsonvoltage": "0.0"
-                                    }
-                            else:
-                                print(f"Utils data not in expected format: '{utils_str}', using default values")
-                                utils_data = {
-                                    "armstate": "0",
-                                    "batvoltage": "0.0",
-                                    "jetsonvoltage": "0.0"
-                                }
-                            
-                            # Create complete update_utils dictionary and reassign to trigger property change
-                            # Handle new Firebase data structure
-                            if "sensors" in json_data and "current" in json_data["sensors"]:
-                                # New Firebase structure
-                                sensors_data = json_data["sensors"]["current"]
-                                complete_data = {
-                                    "sensors": {
-                                        "current": {
-                                            "gps": sensors_data.get("gps", {}),
-                                            "compass": sensors_data.get("compass", "0"),
-                                            "autonomous": sensors_data.get("autonomous", {}),
-                                            "utils": utils_str,
-                                            "packet_count": sensors_data.get("packet_count", 0),
-                                            "timestamp": sensors_data.get("timestamp", time.time())
-                                        }
-                                    },
-                                    "system": {
-                                        "status": json_data.get("system", {}).get("status", {})
-                                    },
-                                    "control": json_data.get("control", {}),
-                                    "remote_control": json_data.get("remote_control", {}),
-                                    "test": json_data.get("test", {})
-                                }
-                            else:
-                                # Legacy structure
-                                complete_data = {
-                                    "gps": json_data["gps"],
-                                    "compass": json_data["compass"],
-                                    "autonomous": json_data["autonomous"],
-                                    **utils_data  # Include the parsed utils data
-                                }
-                            
-                            print(f"[DEBUG] Created update_utils with keys: {list(complete_data.keys())}")
-                            print(f"[DEBUG] Utils data in complete_data: {complete_data.get('armstate', 'Not found')}, {complete_data.get('batvoltage', 'Not found')}, {complete_data.get('jetsonvoltage', 'Not found')}")
-                            print(f"[DEBUG] Autonomous data: {complete_data.get('autonomous', 'Not found')}")
-                            print(f"[DEBUG] Complete data structure: {complete_data}")
-                            
-                            # Force property update by serializing as JSON with timestamp to ensure uniqueness
-                            complete_data_with_timestamp = complete_data.copy()
-                            complete_data_with_timestamp['_timestamp'] = time.time()
-                            self.update_utils = json.dumps(complete_data_with_timestamp)
-                            
-                            # Also trigger the update_event to force UI refresh
-                            self.update_event += 1
-                            
-                            # Update compass widget
-                            if json_data["compass"] != "None" and self.compasswidget is not None:
-                                try:
-                                    compass_value = float(json_data["compass"])
-                                    print(f"[DEBUG] Updating compass with value: {compass_value}")
-                                    self.compasswidget.update_compass(compass_value)
-                                    self.dataconfirm["compass"] = True
-                                except (ValueError, TypeError):
-                                    print("Invalid compass value:", json_data["compass"])
-                            else:
-                                print("Compass data is None or compass widget not set")
-                        else:
-                            print("Missing required fields in JSON data")
-                            
-                    except json.JSONDecodeError:
-                        # Fallback to old format
-                        if(compassdata.startswith("#")):
-                            parts = compassdata[1:].split("=")
-                            print(parts)
-                            if(len(parts)==5):
-                                old_data = {
-                                    "armstate":parts[0],
-                                    "batvoltage":parts[1],
-                                    "jetsonvoltage":parts[2],
-                                    "gps":parts[4],
-                                    "compass":parts[3]
-                                }
-                                self.update_utils = json.dumps(old_data)
-                                
-
-                                if(parts[3]!="None" and self.compasswidget is not None):
-                                    self.compasswidget.update_compass(float(parts[3]))
-                                    self.dataconfirm["compass"] = True
-                            else:
-                                print("utils data missing ")
-                # print(f"Received message: {data.decode()} from {addr}")
+                if not data:
+                    continue
+                
+                compassdata = data.decode('utf-8', errors='ignore')
+                
+                if compassdata and compassdata != 'None':
+                    self.process_udp_data(compassdata, addr)
+                    
+            except socket.timeout:
+                # Timeout is expected, continue listening
+                continue
             except Exception as e:
-                pass
-                # print(f"Error receiving UDP packet: {e}")
+                print(f"Error in UDP listener: {e}")
+                time.sleep(1)  # Wait before retrying
 
-    def setcompasswidget(self,compasswidget=None):
+    def process_udp_data(self, data, addr):
+        """Process UDP data with proper validation and error handling"""
+        try:
+            # Try to parse as JSON first (new format)
+            try:
+                json_data = json.loads(data)
+                self.process_json_data(json_data)
+            except json.JSONDecodeError:
+                # Fallback to old format
+                self.process_legacy_data(data)
+                
+        except Exception as e:
+            print(f"Error processing UDP data: {e}")
+
+    def process_json_data(self, json_data):
+        """Process JSON format data"""
+        try:
+            # Handle new Firebase data structure
+            if "sensors" in json_data and "current" in json_data["sensors"]:
+                sensors_data = json_data["sensors"]["current"]
+                
+                # Parse utils data
+                utils_str = sensors_data.get("utils", "")
+                utils_data = self.parse_utils_string(utils_str)
+                
+                # Create complete data structure
+                complete_data = {
+                    "sensors": {
+                        "current": {
+                            "gps": sensors_data.get("gps", {}),
+                            "compass": sensors_data.get("compass", "0"),
+                            "autonomous": sensors_data.get("autonomous", {}),
+                            "utils": utils_str,
+                            "packet_count": sensors_data.get("packet_count", 0),
+                            "timestamp": sensors_data.get("timestamp", time.time())
+                        }
+                    },
+                    "system": {
+                        "status": json_data.get("system", {}).get("status", {})
+                    },
+                    "control": json_data.get("control", {}),
+                    "remote_control": json_data.get("remote_control", {}),
+                    "test": json_data.get("test", {})
+                }
+                
+                # Update with thread safety
+                with self.data_lock:
+                    complete_data['_timestamp'] = time.time()
+                    self.update_utils = json.dumps(complete_data)
+                    self.update_event += 1
+                
+                # Update compass widget
+                self.update_compass_widget(sensors_data.get("compass", "0"))
+                
+            else:
+                # Legacy JSON structure
+                complete_data = {
+                    "gps": json_data.get("gps", {}),
+                    "compass": json_data.get("compass", "0"),
+                    "autonomous": json_data.get("autonomous", {}),
+                    **self.parse_utils_string(json_data.get("utils", ""))
+                }
+                
+                with self.data_lock:
+                    complete_data['_timestamp'] = time.time()
+                    self.update_utils = json.dumps(complete_data)
+                    self.update_event += 1
+                
+                self.update_compass_widget(json_data.get("compass", "0"))
+                
+        except Exception as e:
+            print(f"Error processing JSON data: {e}")
+
+    def process_legacy_data(self, data):
+        """Process legacy format data"""
+        try:
+            if data.startswith("#"):
+                parts = data[1:].split("=")
+                if len(parts) == 5:
+                    legacy_data = {
+                        "armstate": parts[0],
+                        "batvoltage": parts[1],
+                        "jetsonvoltage": parts[2],
+                        "gps": parts[4],
+                        "compass": parts[3]
+                    }
+                    
+                    with self.data_lock:
+                        legacy_data['_timestamp'] = time.time()
+                        self.update_utils = json.dumps(legacy_data)
+                        self.update_event += 1
+                    
+                    self.update_compass_widget(parts[3])
+                else:
+                    print("Legacy data format incorrect")
+        except Exception as e:
+            print(f"Error processing legacy data: {e}")
+
+    def parse_utils_string(self, utils_str):
+        """Parse utils string with error handling"""
+        try:
+            if utils_str and utils_str.strip() and utils_str.startswith("#"):
+                parts = utils_str[1:].split("=")
+                if len(parts) >= 3:
+                    return {
+                        "armstate": parts[0],
+                        "batvoltage": parts[1],
+                        "jetsonvoltage": parts[2]
+                    }
+        except Exception as e:
+            print(f"Error parsing utils string: {e}")
+        
+        return {
+            "armstate": "0",
+            "batvoltage": "0.0",
+            "jetsonvoltage": "0.0"
+        }
+
+    def update_compass_widget(self, compass_value):
+        """Update compass widget with error handling"""
+        try:
+            if compass_value and compass_value != "None" and self.compasswidget is not None:
+                compass_angle = float(compass_value)
+                self.compasswidget.update_compass(compass_angle)
+                self.dataconfirm["compass"] = True
+        except (ValueError, TypeError) as e:
+            print(f"Error updating compass widget: {e}")
+
+    def setcompasswidget(self, compasswidget=None):
+        """Set compass widget reference"""
         self.compasswidget = compasswidget
-        # if(self.compasswidget!=None):
-        #     Clock.schedule_interval(self.compasswidget.update_angle, 1)
-
-# root.mainloop()
