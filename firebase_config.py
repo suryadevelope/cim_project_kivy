@@ -15,8 +15,6 @@ FIREBASE_CONFIG = {
 # Database paths for different control data
 FIREBASE_PATHS = {
     "joystick": "control/joystick",
-    "mission_commands": "control/mission_commands",  # New path for mission planning
-    "navigation_status": "control/navigation_status",  # New path for navigation status
     "autonomous": "control/autonomous", 
     "system_status": "system/status",
     "sensors": "sensors/current"

@@ -428,8 +428,6 @@ class MainScreen(Screen):
                 # Set up callbacks
                 self.firebase_control.on_joystick_update = self.on_firebase_joystick_update  # type: ignore
                 self.firebase_control.on_autonomous_update = self.on_firebase_autonomous_update  # type: ignore
-                self.firebase_control.on_mission_commands_update = self.on_firebase_mission_commands_update  # type: ignore
-                self.firebase_control.on_navigation_status_update = self.on_firebase_navigation_status_update  # type: ignore
                 self.firebase_control.on_system_update = self.on_firebase_system_update  # type: ignore
                 print("Firebase control initialized successfully")
                 
@@ -1095,6 +1093,7 @@ class MainScreen(Screen):
         except Exception as e:
             print(f"Error handling Firebase system update: {e}")
     
+<<<<<<< HEAD
     def on_firebase_mission_commands_update(self, mission_data):
         """Handle mission commands updates from Firebase"""
         try:
@@ -1264,6 +1263,8 @@ class MainScreen(Screen):
             import traceback
             traceback.print_exc()
 
+=======
+>>>>>>> parent of e361809 (3.0.14)
     def send_joystick_udp(self, joystick_data):
         """Send joystick data via UDP in the correct format"""
         try:
@@ -2057,24 +2058,23 @@ class MainScreen(Screen):
             try:
                 # First, try to get existing mission data from Firebase
                 from firebase_config import FIREBASE_PATHS
-                mission_commands_path = FIREBASE_PATHS["mission_commands"].split("/")
-                existing_data = self.firebase_control.db.child(*mission_commands_path).get().val() or {}
+                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                existing_data = self.firebase_control.db.child(*autonomous_path).get().val() or {}
                 
                 # Preserve existing mission points if they exist
                 mission_points = existing_data.get("mission", [])
                 
-                # Send updated mission commands to Firebase
-                success = self.send_mission_commands_to_firebase(mission_points, "start")
+                # Create updated mission data with start status
+                updated_mission_data = {
+                    "mission": mission_points,
+                    "status": "start",
+                    "timestamp": time.time(),
+                    "mission_count": len(mission_points)
+                }
+                
+                # Send updated mission data to Firebase
+                success = self.firebase_control.send_autonomous_mission(updated_mission_data)
                 if success:
-                    # Also send navigation status to indicate active navigation
-                    self.send_navigation_status_to_firebase(
-                        active=True,
-                        current_waypoint=0,
-                        distance_to_target=0,
-                        heading=0,
-                        speed=0,
-                        total_waypoints=len(mission_points)
-                    )
                     toast("Mission started via Firebase")
                     print(f"✅ Mission started with {len(mission_points)} waypoints")
                 else:
@@ -2097,24 +2097,23 @@ class MainScreen(Screen):
             try:
                 # First, try to get existing mission data from Firebase
                 from firebase_config import FIREBASE_PATHS
-                mission_commands_path = FIREBASE_PATHS["mission_commands"].split("/")
-                existing_data = self.firebase_control.db.child(*mission_commands_path).get().val() or {}
+                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                existing_data = self.firebase_control.db.child(*autonomous_path).get().val() or {}
                 
                 # Preserve existing mission points if they exist
                 mission_points = existing_data.get("mission", [])
                 
-                # Send updated mission commands to Firebase
-                success = self.send_mission_commands_to_firebase(mission_points, "stop")
+                # Create updated mission data with stop status
+                updated_mission_data = {
+                    "mission": mission_points,
+                    "status": "stop",
+                    "timestamp": time.time(),
+                    "mission_count": len(mission_points)
+                }
+                
+                # Send updated mission data to Firebase
+                success = self.firebase_control.send_autonomous_mission(updated_mission_data)
                 if success:
-                    # Also send navigation status to indicate inactive navigation
-                    self.send_navigation_status_to_firebase(
-                        active=False,
-                        current_waypoint=0,
-                        distance_to_target=0,
-                        heading=0,
-                        speed=0,
-                        total_waypoints=len(mission_points)
-                    )
                     toast("Mission stopped via Firebase")
                     print(f"✅ Mission stopped with {len(mission_points)} waypoints preserved")
                 else:
@@ -2342,65 +2341,6 @@ class MainScreen(Screen):
             print(f"Error testing control functionality: {e}")
             import traceback
             traceback.print_exc()
-
-    def send_mission_commands_to_firebase(self, mission_points, status="stop"):
-        """Send mission commands to Firebase"""
-        try:
-            if not self.firebase_control:
-                print("Firebase control not available")
-                return False
-            
-            mission_data = {
-                "mission": mission_points,
-                "mission_count": len(mission_points),
-                "status": status,
-                "timestamp": time.time()
-            }
-            
-            success = self.firebase_control.send_mission_commands(mission_data)
-            if success:
-                print(f"Successfully sent mission commands to Firebase: {len(mission_points)} waypoints, status: {status}")
-                return True
-            else:
-                print(f"Failed to send mission commands to Firebase")
-                return False
-                
-        except Exception as e:
-            print(f"Error sending mission commands to Firebase: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
-    def send_navigation_status_to_firebase(self, active=False, current_waypoint=0, distance_to_target=0, heading=0, speed=0, total_waypoints=0):
-        """Send navigation status to Firebase"""
-        try:
-            if not self.firebase_control:
-                print("Firebase control not available")
-                return False
-            
-            nav_data = {
-                "active": active,
-                "current_waypoint": current_waypoint,
-                "distance_to_target": distance_to_target,
-                "heading": heading,
-                "speed": speed,
-                "total_waypoints": total_waypoints,
-                "timestamp": time.time()
-            }
-            
-            success = self.firebase_control.send_navigation_status(nav_data)
-            if success:
-                print(f"Successfully sent navigation status to Firebase: active={active}, wp={current_waypoint}/{total_waypoints}")
-                return True
-            else:
-                print(f"Failed to send navigation status to Firebase")
-                return False
-                
-        except Exception as e:
-            print(f"Error sending navigation status to Firebase: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
 
 
 # --- Map Plotting Screen ---
@@ -2728,9 +2668,10 @@ class MapPlotScreen(Screen):
                                 Clock.schedule_once(lambda dt: toast("Firebase connection failed"))
                                 return
                         
-                        print(f"Sending mission data: {len(mission_points)} waypoints, status: {last_status}")
+                        mission_data_dict = {"mission": mission_points, "status": last_status}
+                        print(f"Sending mission data: {mission_data_dict}")
                         
-                        success = main_screen.send_mission_commands_to_firebase(mission_points, last_status)
+                        success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
                         if success:
                             Clock.schedule_once(lambda dt: toast("Mission sent successfully to Firebase!"))
                             print(f"✅ Successfully sent mission to Firebase: {len(mission_points)} waypoints")

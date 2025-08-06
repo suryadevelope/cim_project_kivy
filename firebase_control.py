@@ -93,6 +93,7 @@ class FirebaseControl:
                 "compass_err": None
             }
             
+<<<<<<< HEAD
             # Mission commands data (new structure)
             self.mission_commands = {
                 "mission": [],
@@ -113,6 +114,9 @@ class FirebaseControl:
             }
             
             # System status data
+=======
+            # System status
+>>>>>>> parent of e361809 (3.0.14)
             self.system_status = {
                 "control_mode": "hardware",
                 "firebase_connected": False,
@@ -121,6 +125,7 @@ class FirebaseControl:
                 "timestamp": time.time()
             }
             
+<<<<<<< HEAD
             # Sensors data
             self.sensors_data = {
                 "gps": {},
@@ -129,6 +134,32 @@ class FirebaseControl:
                 "utils": "",
                 "packet_count": 0,
                 "timestamp": time.time()
+=======
+            # Callbacks
+            self.on_joystick_update = None  # type: ignore
+            self.on_autonomous_update = None  # type: ignore
+            self.on_system_update = None  # type: ignore
+            
+            # Start listening threads
+            self.start_listeners()
+            print("FirebaseControl initialized successfully")
+            
+        except Exception as e:
+            print(f"Error initializing FirebaseControl: {e}")
+            import traceback
+            traceback.print_exc()
+            self.is_connected = False
+            raise
+    
+    def test_connection(self):
+        """Test Firebase connection by writing and reading a test value"""
+        try:
+            print("=== TESTING FIREBASE CONNECTION ===")
+            test_data = {
+                "test": "connection",
+                "timestamp": datetime.now().isoformat(),
+                "status": "testing"
+>>>>>>> parent of e361809 (3.0.14)
             }
             
             # Callback functions
@@ -267,6 +298,7 @@ class FirebaseControl:
             print(f"Error validating autonomous data: {e}")
             return False
 
+<<<<<<< HEAD
     def validate_mission_data(self, mission_data):
         """Validate mission data structure"""
         try:
@@ -326,6 +358,8 @@ class FirebaseControl:
             print(f"Error validating navigation data: {e}")
             return False
 
+=======
+>>>>>>> parent of e361809 (3.0.14)
     def start_listeners(self):
         """Start Firebase listeners for real-time updates"""
         try:
@@ -347,20 +381,6 @@ class FirebaseControl:
             print(f"Setting up autonomous listener for path: {autonomous_path}")
             self.autonomous_stream = self.db.child(*autonomous_path).stream(
                 self.on_autonomous_data_update
-            )
-            
-            # Listen for mission commands (new)
-            mission_commands_path = FIREBASE_PATHS["mission_commands"].split("/")
-            print(f"Setting up mission commands listener for path: {mission_commands_path}")
-            self.mission_commands_stream = self.db.child(*mission_commands_path).stream(
-                self.on_mission_commands_update
-            )
-            
-            # Listen for navigation status (new)
-            navigation_status_path = FIREBASE_PATHS["navigation_status"].split("/")
-            print(f"Setting up navigation status listener for path: {navigation_status_path}")
-            self.navigation_status_stream = self.db.child(*navigation_status_path).stream(
-                self.on_navigation_status_update
             )
             
             # Listen for system status
@@ -493,6 +513,7 @@ class FirebaseControl:
                     print(f"Sensors data updated: {sensors_data}")
         except Exception as e:
             print(f"Error handling sensors update: {e}")
+<<<<<<< HEAD
 
     def on_mission_commands_update(self, message):
         """Handle mission commands updates from Firebase"""
@@ -538,6 +559,11 @@ class FirebaseControl:
         except Exception as e:
             print(f"Error handling navigation status update: {e}")
 
+=======
+            import traceback
+            traceback.print_exc()
+    
+>>>>>>> parent of e361809 (3.0.14)
     def send_joystick_data(self, joystick_data):
         """Send joystick data to Firebase"""
         try:
@@ -712,6 +738,7 @@ class FirebaseControl:
             print("Firebase listeners stopped")
             
         except Exception as e:
+<<<<<<< HEAD
             print(f"Error stopping listeners: {e}")
 
     def send_mission_commands(self, mission_data):
@@ -773,3 +800,6 @@ class FirebaseControl:
         except Exception as e:
             print(f"Error sending navigation status: {e}")
             return False 
+=======
+            print(f"Error stopping Firebase listeners: {e}") 
+>>>>>>> parent of e361809 (3.0.14)
