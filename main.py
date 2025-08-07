@@ -905,41 +905,134 @@ class MainScreen(Screen):
             toast("Error switching control mode")
     
     def on_firebase_joystick_update(self, joystick_data):
-        """Handle joystick data updates from Firebase"""
+        """Handle joystick data updates from Firebase with enhanced validation"""
         try:
-            print(f"Firebase joystick update: {joystick_data}")
+            print(f"Firebase joystick update received: {joystick_data}")
             
             # Handle new nested structure
             if isinstance(joystick_data, dict) and "joystick" in joystick_data:
                 joystick_data = joystick_data["joystick"]
             
-            # Send joystick data to the rover via UDP if in internet mode
-            if self.control_mode == "internet":
-                # Check if the data contains the UDP command string
-                if isinstance(joystick_data, dict) and "udp_command" in joystick_data:
-                    # Extract the UDP command string and send it directly
-                    udp_command = joystick_data["udp_command"]
-                    print(f"Received UDP command from Firebase: {udp_command}")
-                    # Send the command directly via UDP
+            # Check if we're in internet mode
+            if self.control_mode != "internet":
+                print(f"Received Firebase joystick update but not in internet mode (current: {self.control_mode})")
+                return
+            
+            # Check connectivity status
+            if not self.autonomous_data_exchange["internet_connected"]:
+                print("Internet connectivity lost, ignoring Firebase joystick update")
+                return
+            
+            if not self.autonomous_data_exchange["firebase_connected"]:
+                print("Firebase connectivity lost, ignoring Firebase joystick update")
+                return
+            
+            # Handle new UDP command format (same as socket schema)
+            if isinstance(joystick_data, dict) and "udp_command" in joystick_data:
+                # Extract the UDP command string and send it directly
+                udp_command = joystick_data["udp_command"]
+                print(f"Received UDP command from Firebase: {udp_command}")
+                
+                # Validate UDP command format
+                if isinstance(udp_command, str) and udp_command.startswith("@"):
+                    # Send the command directly via UDP (same as socket)
                     self.send_joystick_udp(udp_command)
+                    print(f"Successfully sent Firebase joystick command via UDP: {udp_command}")
                 else:
-                    # Fallback: convert old format joystick data
-                    print("Received old format joystick data, converting...")
-                    udp_data = {
-                        "x_axis": joystick_data.get("x_axis", 0.0),
-                        "y_axis": joystick_data.get("y_axis", 0.0),
-                        "lift_speed": joystick_data.get("lift_speed", 0.0),
-                        "clicked": joystick_data.get("clicked", False),
-                        "release": joystick_data.get("release", False),
-                        "centerliftknob": joystick_data.get("centerliftknob", 0)
-                    }
-                    self.send_joystick_udp(udp_data)
+                    print(f"Invalid UDP command format from Firebase: {udp_command}")
+            
+            # Handle old format (backward compatibility)
+            elif isinstance(joystick_data, dict) and "speed" in joystick_data:
+                print("Received old format joystick data from Firebase, converting...")
+                # Convert old format to UDP command
+                speed = joystick_data.get("speed", 0)
+                direction = joystick_data.get("direction", 115)
+                holdobject = joystick_data.get("holdobject", -1)
+                centerliftknob = joystick_data.get("centerliftknob", 0)
+                lift_speed = joystick_data.get("lift_speed", 0.0)
+                
+                # Format the command string (same as socket format)
+                udp_command = "@{},{},{},{},{}".format(speed, direction, holdobject, centerliftknob, lift_speed)
+                self.send_joystick_udp(udp_command)
+                print(f"Converted and sent old format joystick data via UDP: {udp_command}")
+            
             else:
-                print(f"Not in internet mode (current mode: {self.control_mode})")
+                print(f"Invalid joystick data format from Firebase: {joystick_data}")
+                return
+            
+            # Log successful update
+            print(f"Successfully processed Firebase joystick update: {joystick_data}")
+            
+            # Update GUI with joystick data (same as socket data)
+            self.update_joystick_gui_from_firebase(joystick_data)
+            
         except Exception as e:
             print(f"Error handling Firebase joystick update: {e}")
             import traceback
             traceback.print_exc()
+    
+    def update_joystick_gui_from_firebase(self, joystick_data):
+        """Update GUI with joystick data from Firebase (same as socket data)"""
+        try:
+            # Extract joystick information for GUI display
+            if isinstance(joystick_data, dict) and "udp_command" in joystick_data:
+                udp_command = joystick_data["udp_command"]
+                # Parse UDP command for GUI display
+                if udp_command.startswith("@"):
+                    parts = udp_command[1:].split(",")
+                    if len(parts) >= 5:
+                        speed = int(parts[0])
+                        direction = int(parts[1])
+                        holdobject = int(parts[2])
+                        centerliftknob = int(parts[3])
+                        lift_speed = float(parts[4])
+                        
+                        # Update GUI elements (same as socket data)
+                        self.update_joystick_display(speed, direction, holdobject, centerliftknob, lift_speed)
+                        print(f"Updated GUI with Firebase joystick data: speed={speed}, direction={direction}")
+            
+            elif isinstance(joystick_data, dict) and "speed" in joystick_data:
+                # Old format - extract values directly
+                speed = joystick_data.get("speed", 0)
+                direction = joystick_data.get("direction", 115)
+                holdobject = joystick_data.get("holdobject", -1)
+                centerliftknob = joystick_data.get("centerliftknob", 0)
+                lift_speed = joystick_data.get("lift_speed", 0.0)
+                
+                # Update GUI elements
+                self.update_joystick_display(speed, direction, holdobject, centerliftknob, lift_speed)
+                print(f"Updated GUI with old format Firebase joystick data: speed={speed}, direction={direction}")
+                
+        except Exception as e:
+            print(f"Error updating GUI with Firebase joystick data: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def update_joystick_display(self, speed, direction, holdobject, centerliftknob, lift_speed):
+        """Update joystick display elements in GUI"""
+        try:
+            # Update joystick status labels if they exist
+            if hasattr(self, 'joystick_status_label'):
+                direction_names = {
+                    1: "Backward-Left", 3: "Backward-Right", 4: "Left", 5: "Backward",
+                    6: "Right", 7: "Forward-Left", 8: "Forward", 9: "Forward-Right", 115: "Stop"
+                }
+                direction_name = direction_names.get(direction, f"Unknown({direction})")
+                status_text = f"Speed: {speed}, Direction: {direction_name}"
+                self.joystick_status_label.text = status_text
+            
+            # Update object manipulation status
+            if hasattr(self, 'object_status_label'):
+                object_status = "Hold" if holdobject == 1 else "Release" if holdobject == 0 else "None"
+                self.object_status_label.text = f"Object: {object_status}"
+            
+            # Update lift status
+            if hasattr(self, 'lift_status_label'):
+                lift_status = "Up" if centerliftknob == 1 else "Down" if centerliftknob == -1 else "Neutral"
+                self.lift_status_label.text = f"Lift: {lift_status} ({lift_speed:.2f})"
+                
+        except Exception as e:
+            print(f"Error updating joystick display: {e}")
     
     def on_firebase_autonomous_update(self, autonomous_data):
         """Handle autonomous data updates from Firebase with enhanced validation"""

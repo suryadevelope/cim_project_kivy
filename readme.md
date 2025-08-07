@@ -72,9 +72,42 @@ python main.py
    - Orange "Internet" button in top navigation
    - Control rover from anywhere with internet access
 
+## Firebase Integration
+
 ### Remote Control via Firebase
 
 When in Internet mode, control the rover by updating the Firebase database:
+
+#### New Joystick Schema (Matches Socket Schema)
+
+The joystick data now uses the same format as the socket communication:
+
+```json
+{
+  "control": {
+    "joystick": {
+      "udp_command": "@128,8,0,0,0.5",  // Same format as socket: @speed,direction,holdobject,centerliftknob,lift_speed
+      "timestamp": 1754475460.6133726
+    }
+  }
+}
+```
+
+**UDP Command Format:** `@{speed},{direction},{holdobject},{centerliftknob},{lift_speed}`
+
+- **speed** (0-255): Movement speed
+- **direction** (1,3,4,5,6,7,8,9,115): Movement direction
+  - `1` = Backward-left, `3` = Backward-right, `4` = Left, `5` = Backward
+  - `6` = Right, `7` = Forward-left, `8` = Forward, `9` = Forward-right, `115` = Stop
+- **holdobject** (-1,0,1): Object manipulation state
+  - `-1` = No action, `1` = Hold/grab, `0` = Release
+- **centerliftknob** (-1,0,1): Lift control
+  - `-1` = Down, `0` = Neutral, `1` = Up
+- **lift_speed** (-1.0 to 1.0): Lift speed
+
+#### Legacy Joystick Schema (Backward Compatible)
+
+For backward compatibility, the old format is still supported:
 
 ```json
 {
@@ -86,7 +119,16 @@ When in Internet mode, control the rover by updating the Firebase database:
       "clicked": false,   // boolean (button press)
       "release": false,   // boolean (button release)
       "centerliftknob": 0 // integer (hat position)
-    },
+    }
+  }
+}
+```
+
+#### Autonomous Control
+
+```json
+{
+  "control": {
     "autonomous": {
       "run_status": true,      // Start/stop autonomous mode
       "vh_autonomous": true,   // Enable/disable autonomous navigation
@@ -95,6 +137,19 @@ When in Internet mode, control the rover by updating the Firebase database:
   }
 }
 ```
+
+### Data Flow
+
+1. **Hardware Mode**: Joystick → Socket → Rover
+2. **Internet Mode**: Firebase → UDP → Rover (same socket format)
+
+### GUI Updates
+
+Both socket and Firebase data now update the GUI consistently:
+- Joystick status display
+- Object manipulation status
+- Lift control status
+- Real-time data synchronization
 
 ## Configuration
 

@@ -141,12 +141,15 @@ class Stream(EventDispatcher):
             return self.control_mode
 
     def send_joystick_to_firebase(self, udp_command_string):
-        """Send joystick data to Firebase"""
-        if self.firebase_control and self.control_mode == "internet":
+        """Send joystick data to Firebase in the same format as socket"""
+        if self.firebase_control and self.control_mode == "internet":  # type: ignore
             try:
-                # Parse UDP command and convert to joystick data
-                joystick_data = self.parse_udp_command(udp_command_string)
-                self.firebase_control.send_joystick_data(joystick_data)
+                # Send the UDP command string directly to Firebase (same as socket)
+                joystick_data = {
+                    "udp_command": udp_command_string,
+                    "timestamp": time.time()
+                }
+                self.firebase_control.send_joystick_data(joystick_data)  # type: ignore
                 print(f"Sent joystick data to Firebase: {joystick_data}")
             except Exception as e:
                 print(f"Error sending joystick data to Firebase: {e}")
