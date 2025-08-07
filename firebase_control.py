@@ -21,12 +21,16 @@ except ImportError as e:
         "messagingSenderId": "your-sender-id",
         "appId": "your-app-id"
     }
+    
     FIREBASE_PATHS = {
-        "joystick": "control/joystick",
-        "autonomous": "control/autonomous", 
-        "system_status": "system/status",
-        "sensors": "sensors/current"
+           "joystick": "control/joystick",
+            "autonomous": "control/autonomous", 
+            "system_status": "system/status",
+            "sensors": "sensors/current",
+            "mission_commands": "control/mission_commands",
+            "navigation_status": "control/navigation_status"
     }
+
     ROVER_CONTROL_PARAMS = {
         "joystick_deadzone": 0.1,
         "max_speed": 100.0,
