@@ -225,6 +225,21 @@ Builder.load_string('''
     size_hint: None, None
     size: 230, 230  # Default size, will be updated by parent layout
     canvas.before:
+        Color:
+            rgba: 0.95, 0.95, 0.97, 1  # Light background
+        Rectangle:
+            size: 230, 230  
+            pos: self.pos 
+        Color:
+            rgba: 1, 1, 1, 1  # White for compass background
+        Ellipse:
+            size: 220, 220
+            pos: self.pos[0] + 5, self.pos[1] + 5
+        Color:
+            rgba: 0.2, 0.2, 0.2, 1  # Dark border
+        Line:
+            circle: self.center_x, self.center_y, 110, 0, 360
+            width: 2
         Rectangle:
             size: 230, 230  
             pos: self.pos 
@@ -238,8 +253,7 @@ Builder.load_string('''
             id: needle
             source: './assets/needle.png'
             size_hint: None, None
-            pos_hint: {'center_x': 0.68, 'center_y': 0.68}
-            # pos: (self.center_x - 50,self.center_y-50)  # Center the needle
+            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
             size: 100, 100
             keep_ratio: True
             allow_stretch: True
@@ -250,6 +264,35 @@ Builder.load_string('''
                     origin: self.center
             canvas.after:
                 PopMatrix
+                
+        # Add cardinal directions
+        Label:
+            text: 'N'
+            pos_hint: {'center_x': 0.5, 'center_y': 0.85}
+            color: 0.8, 0.2, 0.2, 1
+            font_size: '16sp'
+            bold: True
+            
+        Label:
+            text: 'S'
+            pos_hint: {'center_x': 0.5, 'center_y': 0.15}
+            color: 0.2, 0.2, 0.8, 1
+            font_size: '16sp'
+            bold: True
+            
+        Label:
+            text: 'E'
+            pos_hint: {'center_x': 0.85, 'center_y': 0.5}
+            color: 0.2, 0.8, 0.2, 1
+            font_size: '16sp'
+            bold: True
+            
+        Label:
+            text: 'W'
+            pos_hint: {'center_x': 0.15, 'center_y': 0.5}
+            color: 0.8, 0.8, 0.2, 1
+            font_size: '16sp'
+            bold: True
 ''')
 
 class CompassWidget(BoxLayout):
@@ -285,29 +328,49 @@ class SplashScreen(Screen):
     def __init__(self, **kwargs):
         super(SplashScreen, self).__init__(**kwargs)
         
+        # Background with better styling
         with self.canvas.before:
-            Color(0.75, 0.75, 0.75, 1)  # Gray metal color
+            Color(0.95, 0.95, 0.97, 1)  # Light gray background
             self.rect = Rectangle(size=self.size, pos=self.pos)
         self.bind(size=self._update_rect, pos=self._update_rect)
-        self.add_widget(Image(source='./assets/splash_image.png'))  # Ensure this image exists
-        # Add circular progress bar
+        
+        # Main layout with better organization
+        main_layout = BoxLayout(orientation='vertical', size_hint=(1, 1), padding=[50, 50, 50, 50], spacing=30)
+        
+        # Logo section
+        logo_section = BoxLayout(orientation='vertical', size_hint=(1, 0.4), spacing=20)
+        logo_image = Image(source='./assets/splash_image.png', size_hint=(None, None), size=(300, 200), allow_stretch=True, keep_ratio=True)
+        logo_section.add_widget(Widget(size_hint_y=0.2))  # Top spacer
+        logo_section.add_widget(logo_image)
+        logo_section.add_widget(Widget(size_hint_y=0.2))  # Bottom spacer
+        main_layout.add_widget(logo_section)
+        
+        # Progress section
+        progress_section = BoxLayout(orientation='vertical', size_hint=(1, 0.3), spacing=20)
+        
+        # Circular progress bar with better styling
         self.progress_bar = ProgressBar(max=1000)
         self.progress_bar.size_hint = (None, None)
-        self.progress_bar.size = (150, 150)
-        self.progress_bar.pos_hint = {'center_x': 0.5, 'center_y': 0.35}
-        self.add_widget(self.progress_bar)
+        self.progress_bar.size = (120, 120)
+        self.progress_bar.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
+        progress_section.add_widget(self.progress_bar)
         
-        # Add waiting text
+        # Waiting text with better styling
         self.waiting_label = Label(
             text="Waiting for the rover to connect...",
-            font_size='20sp',
-            size_hint=(None, None),
-            size=(self.width, 50),
-            pos_hint={'center_x': 0.5, 'center_y': 0.3}
+            font_size='18sp',
+            color=(0.3, 0.3, 0.3, 1),
+            size_hint=(1, None),
+            height=40
         )
-        self.add_widget(self.waiting_label)
+        progress_section.add_widget(self.waiting_label)
         
-      
+        main_layout.add_widget(progress_section)
+        
+        # Bottom spacer
+        main_layout.add_widget(Widget(size_hint_y=0.3))
+        
+        self.add_widget(main_layout)
 
     def on_enter(self, *args):
         
@@ -450,7 +513,8 @@ class MainScreen(Screen):
             self.autonomous_data_exchange["firebase_connected"] = False
 
         # --- Top Navigation Bar ---
-        top_nav = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, padding=[20, 10, 20, 10], spacing=20)
+        # Create a more organized top navigation with better spacing
+        top_nav = BoxLayout(orientation='vertical', size_hint_y=None, height=120, padding=[15, 10, 15, 10], spacing=8)
         with top_nav.canvas.before:
             Color(0.18, 0.28, 0.45, 1)
             self.topbar_rect = Rectangle(size=top_nav.size, pos=top_nav.pos)
@@ -458,79 +522,126 @@ class MainScreen(Screen):
             self.topbar_rect.size = top_nav.size
             self.topbar_rect.pos = top_nav.pos
         top_nav.bind(size=update_topbar_rect, pos=update_topbar_rect)
-        top_nav.add_widget(Image(source='./assets/logo.png', size_hint_x=None, width=50, allow_stretch=True, keep_ratio=True))
-        self.battimg = Image(source=self.img_src, size_hint_x=None, width=40, allow_stretch=True, keep_ratio=True)
-        top_nav.add_widget(self.battimg)
-        self.jetsonbattimg = Image(source=self.jetsonimg_src, size_hint_x=None, width=40, allow_stretch=True, keep_ratio=True)
-        top_nav.add_widget(self.jetsonbattimg)
-        self.armstateimg = Image(source=self.img_src_armstate, size_hint_x=None, width=40, allow_stretch=True, keep_ratio=True)
-        top_nav.add_widget(self.armstateimg)
-        self.top_switch = Switch(active=False, size_hint_x=None, width=60)
-        self.top_switch.bind(active=self.on_switch_active)
-        top_nav.add_widget(self.top_switch)
         
-        # Control mode toggle button
+        # Row 1: Logo, battery indicators, and main controls
+        top_row = BoxLayout(orientation='horizontal', size_hint=(1, None), height=50, spacing=15)
+        
+        # Logo and battery section
+        logo_battery_section = BoxLayout(orientation='horizontal', size_hint_x=None, width=200, spacing=10)
+        logo_battery_section.add_widget(Image(source='./assets/logo.png', size_hint_x=None, width=45, allow_stretch=True, keep_ratio=True))
+        self.battimg = Image(source=self.img_src, size_hint_x=None, width=35, allow_stretch=True, keep_ratio=True)
+        logo_battery_section.add_widget(self.battimg)
+        self.jetsonbattimg = Image(source=self.jetsonimg_src, size_hint_x=None, width=35, allow_stretch=True, keep_ratio=True)
+        logo_battery_section.add_widget(self.jetsonbattimg)
+        self.armstateimg = Image(source=self.img_src_armstate, size_hint_x=None, width=35, allow_stretch=True, keep_ratio=True)
+        logo_battery_section.add_widget(self.armstateimg)
+        top_row.add_widget(logo_battery_section)
+        
+        # Control mode and auto cam section
+        control_section = BoxLayout(orientation='horizontal', size_hint_x=None, width=200, spacing=10)
         self.control_mode_btn = Button(
             text="Hardware", 
             size_hint_x=None, 
-            width=100, 
-            height=40, 
+            width=90, 
+            height=35, 
             background_color=(0.2, 0.6, 0.2, 1), 
-            font_size='14sp'
+            font_size='13sp'
         )
         self.control_mode_btn.bind(on_release=self.toggle_control_mode)
-        top_nav.add_widget(self.control_mode_btn)
-        # Add GPS info labels
-        self.satcount_label = Label(text="Satcount: 0", size_hint_x=None, width=120, color=(1,1,1,1))
-        self.irnss_accuracy_label = Label(text="IRNSS Acc: N/A", size_hint_x=None, width=140, color=(1,1,1,1))
-        self.fix_type_label = Label(text="Fix: N/A", size_hint_x=None, width=100, color=(1,1,1,1))
-        top_nav.add_widget(self.satcount_label)
-        top_nav.add_widget(self.irnss_accuracy_label)
-        top_nav.add_widget(self.fix_type_label)
+        control_section.add_widget(self.control_mode_btn)
         
-        # Add Autonomous Navigation info labels
-        self.autonomous_mode_label = Label(text="Mode: Manual", size_hint_x=None, width=120, color=(1,1,1,1))
-        self.navigation_status_label = Label(text="Nav: Inactive", size_hint_x=None, width=120, color=(1,1,1,1))
-        self.waypoint_progress_label = Label(text="WP: 0/0", size_hint_x=None, width=100, color=(1,1,1,1))
-        top_nav.add_widget(self.autonomous_mode_label)
-        top_nav.add_widget(self.navigation_status_label)
-        top_nav.add_widget(self.waypoint_progress_label)
-        # Map Plotting button
-        self.mapplot_btn_top = Button(text="Map Plotting", size_hint_x=None, width=140, height=40, background_color=(0.1, 0.5, 0.2, 1), font_size='16sp')
+        self.top_switch = Switch(active=False, size_hint_x=None, width=50)
+        self.top_switch.bind(active=self.on_switch_active)
+        control_section.add_widget(self.top_switch)
+        top_row.add_widget(control_section)
+        
+        # Map plotting button
+        self.mapplot_btn_top = Button(
+            text="Map Plotting", 
+            size_hint_x=None, 
+            width=130, 
+            height=35, 
+            background_color=(0.1, 0.5, 0.2, 1), 
+            font_size='14sp'
+        )
         self.mapplot_btn_top.bind(on_release=self.goto_mapplot)
-        top_nav.add_widget(self.mapplot_btn_top)
-        top_nav.add_widget(Label(size_hint_x=1))
+        top_row.add_widget(self.mapplot_btn_top)
+        
+        # Spacer
+        top_row.add_widget(Label(size_hint_x=1))
+        
         # GPS status label (for fix wait message)
-        self.gps_status_label = Label(text="", size_hint_x=None, width=200, color=(1,0,0,1))
-        top_nav.add_widget(self.gps_status_label)
+        self.gps_status_label = Label(text="", size_hint_x=None, width=180, color=(1,0,0,1), font_size='12sp')
+        top_row.add_widget(self.gps_status_label)
+        
+        top_nav.add_widget(top_row)
+        
+        # Row 2: GPS and Navigation information
+        bottom_row = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40, spacing=15)
+        
+        # GPS info section
+        gps_section = BoxLayout(orientation='horizontal', size_hint_x=None, width=400, spacing=15)
+        self.satcount_label = Label(text="Satcount: 0", size_hint_x=None, width=100, color=(1,1,1,1), font_size='12sp')
+        self.irnss_accuracy_label = Label(text="IRNSS Acc: N/A", size_hint_x=None, width=120, color=(1,1,1,1), font_size='12sp')
+        self.fix_type_label = Label(text="Fix: N/A", size_hint_x=None, width=80, color=(1,1,1,1), font_size='12sp')
+        gps_section.add_widget(self.satcount_label)
+        gps_section.add_widget(self.irnss_accuracy_label)
+        gps_section.add_widget(self.fix_type_label)
+        bottom_row.add_widget(gps_section)
+        
+        # Autonomous Navigation info section
+        nav_section = BoxLayout(orientation='horizontal', size_hint_x=None, width=400, spacing=15)
+        self.autonomous_mode_label = Label(text="Mode: Manual", size_hint_x=None, width=110, color=(1,1,1,1), font_size='12sp')
+        self.navigation_status_label = Label(text="Nav: Inactive", size_hint_x=None, width=110, color=(1,1,1,1), font_size='12sp')
+        self.waypoint_progress_label = Label(text="WP: 0/0", size_hint_x=None, width=90, color=(1,1,1,1), font_size='12sp')
+        nav_section.add_widget(self.autonomous_mode_label)
+        nav_section.add_widget(self.navigation_status_label)
+        nav_section.add_widget(self.waypoint_progress_label)
+        bottom_row.add_widget(nav_section)
+        
+        # Spacer
+        bottom_row.add_widget(Label(size_hint_x=1))
+        
+        top_nav.add_widget(bottom_row)
 
-        root_layout = BoxLayout(orientation='vertical', size_hint=(1, 1), padding=[10, 10, 10, 10], spacing=10)
+        root_layout = BoxLayout(orientation='vertical', size_hint=(1, 1), padding=[12, 12, 12, 12], spacing=12)
         root_layout.add_widget(top_nav)
-        main_layout = BoxLayout(orientation='horizontal', spacing=16, size_hint_y=1)
+        main_layout = BoxLayout(orientation='horizontal', spacing=20, size_hint_y=1)
 
         # --- Left: MapView (top) and CompassWidget + Start/Stop (bottom) ---
-        left_panel = BoxLayout(orientation='vertical', spacing=12, size_hint=(0.48, 1))
+        left_panel = BoxLayout(orientation='vertical', spacing=15, size_hint=(0.5, 1))
         
-        # Map controls row
-        map_controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40, spacing=10, padding=[5, 5, 5, 5])
-        self.satellite_toggle = ToggleButton(text="Satellite View", size_hint=(None, 1), width=120, background_color=(0.2, 0.6, 0.8, 1))
+        # Map controls row with better organization
+        map_controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=45, spacing=12, padding=[8, 8, 8, 8])
+        
+        # Map view controls
+        map_view_controls = BoxLayout(orientation='horizontal', size_hint_x=None, width=200, spacing=8)
+        self.satellite_toggle = ToggleButton(
+            text="Satellite View", 
+            size_hint=(None, 1), 
+            width=110, 
+            background_color=(0.2, 0.6, 0.8, 1),
+            font_size='12sp'
+        )
         self.satellite_toggle.bind(state=self.on_satellite_toggle)
-        map_controls.add_widget(self.satellite_toggle)
+        map_view_controls.add_widget(self.satellite_toggle)
         
         # Zoom controls
-        zoom_controls = BoxLayout(orientation='horizontal', size_hint=(None, 1), width=80, spacing=2)
-        self.zoom_in_btn = Button(text="+", size_hint=(None, 1), width=35, background_color=(0.2, 0.7, 0.2, 1), font_size='16sp')
-        self.zoom_out_btn = Button(text="-", size_hint=(None, 1), width=35, background_color=(0.7, 0.2, 0.2, 1), font_size='16sp')
+        zoom_controls = BoxLayout(orientation='horizontal', size_hint=(None, 1), width=70, spacing=4)
+        self.zoom_in_btn = Button(text="+", size_hint=(None, 1), width=32, background_color=(0.2, 0.7, 0.2, 1), font_size='14sp')
+        self.zoom_out_btn = Button(text="-", size_hint=(None, 1), width=32, background_color=(0.7, 0.2, 0.2, 1), font_size='14sp')
         self.zoom_in_btn.bind(on_release=self.zoom_in)
         self.zoom_out_btn.bind(on_release=self.zoom_out)
         zoom_controls.add_widget(self.zoom_out_btn)
         zoom_controls.add_widget(self.zoom_in_btn)
-        map_controls.add_widget(zoom_controls)
+        map_view_controls.add_widget(zoom_controls)
         
+        map_controls.add_widget(map_view_controls)
         map_controls.add_widget(Label(size_hint_x=1))  # Spacer
         left_panel.add_widget(map_controls)
         
-        mapview_container = BoxLayout(size_hint=(1, 0.58), padding=0)  # Reduced height to accommodate controls
+        # Map container with better proportions
+        mapview_container = BoxLayout(size_hint=(1, 0.6), padding=0)
         try:
             # Initialize with regular map source
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
@@ -555,82 +666,130 @@ class MainScreen(Screen):
         mapview_container.add_widget(self.mapview)
         left_panel.add_widget(mapview_container)
 
-        # Compass and Start/Stop row
-        bottom_row = BoxLayout(orientation='horizontal', size_hint=(1, 0.38), spacing=12)
-        compass_box = BoxLayout(size_hint=(0.55, 1), padding=[0, 0, 0, 0])
+        # Compass and Autonomous Navigation row with better organization
+        bottom_row = BoxLayout(orientation='horizontal', size_hint=(1, 0.35), spacing=15)
+        
+        # Compass section with better centering
+        compass_box = BoxLayout(size_hint=(0.5, 1), padding=[10, 5, 10, 5])
+        compass_container = BoxLayout(orientation='vertical', size_hint=(1, 1))
+        
+        # Compass title
+        compass_title = Label(text='Compass', size_hint=(1, None), height=25, 
+                            color=(0.2, 0.2, 0.2, 1), font_size='14sp', bold=True)
+        compass_container.add_widget(compass_title)
+        
+        # Compass widget with better centering
+        compass_widget_container = BoxLayout(size_hint=(1, 1), padding=[20, 10, 20, 10])
         self.compass = CompassWidget()
         self.compass.size_hint = (None, None)
-        self.compass.size = (170, 170)
-        compass_box.add_widget(Widget(size_hint_x=0.1))
-        compass_box.add_widget(self.compass)
-        compass_box.add_widget(Widget(size_hint_x=0.1))
+        self.compass.size = (160, 160)
+        compass_widget_container.add_widget(Widget(size_hint_x=0.1))
+        compass_widget_container.add_widget(self.compass)
+        compass_widget_container.add_widget(Widget(size_hint_x=0.1))
+        compass_container.add_widget(compass_widget_container)
+        
+        compass_box.add_widget(compass_container)
         bottom_row.add_widget(compass_box)
         
-        # Autonomous Navigation Info Box
-        autonomous_box = BoxLayout(orientation='vertical', size_hint=(0.45, 1), spacing=8, padding=[10, 5, 10, 5])
+        # Autonomous Navigation Info Box with improved layout
+        autonomous_box = BoxLayout(orientation='vertical', size_hint=(0.5, 1), spacing=10, padding=[15, 10, 15, 10])
         
         # Autonomous Navigation Title
         autonomous_title = Label(text='Autonomous Navigation', size_hint=(1, None), height=25, 
                                color=(0.2, 0.2, 0.2, 1), font_size='14sp', bold=True)
         autonomous_box.add_widget(autonomous_title)
         
+        # Status information section
+        status_section = BoxLayout(orientation='vertical', size_hint=(1, 0.6), spacing=6)
+        
         # Mission Status
-        self.mission_status_label = Label(text='Mission: No Mission', size_hint=(1, None), height=20, 
+        self.mission_status_label = Label(text='Mission: No Mission', size_hint=(1, None), height=22, 
                                          color=(0.4, 0.4, 0.4, 1), font_size='12sp')
-        autonomous_box.add_widget(self.mission_status_label)
+        status_section.add_widget(self.mission_status_label)
         
         # Waypoint Progress
-        self.waypoint_detail_label = Label(text='Waypoints: 0/0', size_hint=(1, None), height=20, 
+        self.waypoint_detail_label = Label(text='Waypoints: 0/0', size_hint=(1, None), height=22, 
                                           color=(0.4, 0.4, 0.4, 1), font_size='12sp')
-        autonomous_box.add_widget(self.waypoint_detail_label)
+        status_section.add_widget(self.waypoint_detail_label)
         
         # Distance to Waypoint
-        self.distance_label = Label(text='Distance: N/A', size_hint=(1, None), height=20, 
+        self.distance_label = Label(text='Distance: N/A', size_hint=(1, None), height=22, 
                                    color=(0.4, 0.4, 0.4, 1), font_size='12sp')
-        autonomous_box.add_widget(self.distance_label)
+        status_section.add_widget(self.distance_label)
         
         # Navigation State
-        self.nav_state_label = Label(text='State: Inactive', size_hint=(1, None), height=20, 
+        self.nav_state_label = Label(text='State: Inactive', size_hint=(1, None), height=22, 
                                     color=(0.4, 0.4, 0.4, 1), font_size='12sp')
-        autonomous_box.add_widget(self.nav_state_label)
+        status_section.add_widget(self.nav_state_label)
+        
+        autonomous_box.add_widget(status_section)
+        
+        # Control buttons section
+        button_section = BoxLayout(orientation='vertical', size_hint=(1, 0.4), spacing=8)
         
         # Mission Button
-        mission_btn = Button(text='Mission', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.2, 0.4, 0.8, 1))
+        mission_btn = Button(text='Mission', size_hint=(1, None), height=35, font_size='14sp', background_color=(0.2, 0.4, 0.8, 1))
         mission_btn.bind(on_release=self.goto_mapplot)
-        autonomous_box.add_widget(mission_btn)
+        button_section.add_widget(mission_btn)
         
         # Start/Stop Buttons
-        button_box = BoxLayout(orientation='vertical', size_hint=(1, None), height=90, spacing=8)
-        start_btn = Button(text='Start', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.1, 0.5, 0.2, 1))
-        stop_btn = Button(text='Stop', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.6, 0.1, 0.1, 1))
+        control_buttons = BoxLayout(orientation='horizontal', size_hint=(1, None), height=35, spacing=8)
+        start_btn = Button(text='Start', size_hint=(1, 1), font_size='14sp', background_color=(0.1, 0.5, 0.2, 1))
+        stop_btn = Button(text='Stop', size_hint=(1, 1), font_size='14sp', background_color=(0.6, 0.1, 0.1, 1))
         start_btn.bind(on_release=self.send_start_status)
         stop_btn.bind(on_release=self.send_stop_status)
-        button_box.add_widget(start_btn)
-        button_box.add_widget(stop_btn)
-        autonomous_box.add_widget(button_box)
+        control_buttons.add_widget(start_btn)
+        control_buttons.add_widget(stop_btn)
+        button_section.add_widget(control_buttons)
         
+        autonomous_box.add_widget(button_section)
         bottom_row.add_widget(autonomous_box)
         left_panel.add_widget(bottom_row)
         main_layout.add_widget(left_panel)
 
-        # --- Right: Camera images ---
-        right_layout = BoxLayout(orientation='vertical', spacing=10, size_hint=(0.52, 1), padding=[0, 0, 0, 0])
-        camera_layout = GridLayout(cols=2, rows=2, spacing=16, size_hint=(1, 0.9), padding=[10, 10, 10, 10])
-        card_size_hint = (1, 1)
-        for _ in range(3):
-            img = Image(source='./assets/no_cam.png', allow_stretch=True, keep_ratio=True)
-            self.image_widgets.append(img)
-            card = MDCard(
-                orientation='vertical',
-                size_hint=card_size_hint,
-                padding=0,
-                elevation=4,
-                radius=[18, 18, 18, 18],
-                shadow_softness=2
-            )
-            card.add_widget(img)
-            camera_layout.add_widget(card)
-        camera_layout.add_widget(Widget(size_hint=card_size_hint))
+        # --- Right: Camera images with improved layout ---
+        right_layout = BoxLayout(orientation='vertical', spacing=15, size_hint=(0.5, 1), padding=[0, 0, 0, 0])
+        
+        # Camera title
+        camera_title = Label(text='Camera Feeds', size_hint=(1, None), height=30, 
+                           color=(0.2, 0.2, 0.2, 1), font_size='16sp', bold=True)
+        right_layout.add_widget(camera_title)
+        
+        # Improved camera layout - 2x2 grid with better spacing
+        camera_layout = GridLayout(cols=2, rows=2, spacing=12, size_hint=(1, 1), padding=[8, 8, 8, 8])
+        
+        # Create 4 camera cards (including one empty for future use)
+        for i in range(4):
+            if i < 3:  # First 3 are actual cameras
+                img = Image(source='./assets/no_cam.png', allow_stretch=True, keep_ratio=True)
+                self.image_widgets.append(img)
+                card = MDCard(
+                    orientation='vertical',
+                    size_hint=(1, 1),
+                    padding=0,
+                    elevation=3,
+                    radius=[12, 12, 12, 12],
+                    shadow_softness=1.5
+                )
+                card.add_widget(img)
+                camera_layout.add_widget(card)
+            else:  # 4th slot is empty but reserved
+                empty_card = MDCard(
+                    orientation='vertical',
+                    size_hint=(1, 1),
+                    padding=0,
+                    elevation=1,
+                    radius=[12, 12, 12, 12],
+                    shadow_softness=1
+                )
+                empty_label = Label(text='Camera 4\n(Reserved)', 
+                                  color=(0.6, 0.6, 0.6, 1), 
+                                  font_size='12sp',
+                                  halign='center',
+                                  valign='middle')
+                empty_card.add_widget(empty_label)
+                camera_layout.add_widget(empty_card)
+        
         right_layout.add_widget(camera_layout)
         main_layout.add_widget(right_layout)
         root_layout.add_widget(main_layout)
@@ -2443,22 +2602,114 @@ class MapPlotScreen(Screen):
         self.path_line = None
         self.last_right_click_pos = None
         self.last_status = 'stop'  # Default
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        # --- Top controls ---
-        controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=50, spacing=10)
-        self.zoom_my_loc_btn = Button(text="Zoom to My Location", size_hint=(None, 1), width=180)
-        self.zoom_last_marker_btn = Button(text="Zoom to Last Marker", size_hint=(None, 1), width=180)
-        self.clear_mission_btn = Button(text="Clear Mission", size_hint=(None, 1), width=140, background_color=(0.8,0.2,0.2,1))
-        self.write_mission_btn = Button(text="Write Mission", size_hint=(None, 1), width=140, background_color=(0.2,0.7,0.2,1))
-        self.satellite_toggle_mapplot = ToggleButton(text="Satellite View", size_hint=(None, 1), width=120, background_color=(0.2, 0.6, 0.8, 1))
         
-        # Zoom controls for MapPlotScreen
-        self.zoom_in_btn_mapplot = Button(text="+", size_hint=(None, 1), width=35, background_color=(0.2, 0.7, 0.2, 1), font_size='16sp')
-        self.zoom_out_btn_mapplot = Button(text="-", size_hint=(None, 1), width=35, background_color=(0.7, 0.2, 0.2, 1), font_size='16sp')
+        # Main layout with better spacing
+        layout = BoxLayout(orientation='vertical', padding=15, spacing=15)
+        
+        # --- Top controls with better organization ---
+        controls = BoxLayout(orientation='vertical', size_hint=(1, None), height=80, spacing=10)
+        
+        # Row 1: Primary controls
+        primary_controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40, spacing=12)
+        
+        # Navigation controls
+        nav_controls = BoxLayout(orientation='horizontal', size_hint_x=None, width=400, spacing=10)
+        self.zoom_my_loc_btn = Button(
+            text="Zoom to My Location", 
+            size_hint=(None, 1), 
+            width=160,
+            background_color=(0.2, 0.6, 0.8, 1),
+            font_size='12sp'
+        )
+        self.zoom_last_marker_btn = Button(
+            text="Zoom to Last Marker", 
+            size_hint=(None, 1), 
+            width=160,
+            background_color=(0.2, 0.6, 0.8, 1),
+            font_size='12sp'
+        )
+        nav_controls.add_widget(self.zoom_my_loc_btn)
+        nav_controls.add_widget(self.zoom_last_marker_btn)
+        primary_controls.add_widget(nav_controls)
+        
+        # Mission controls
+        mission_controls = BoxLayout(orientation='horizontal', size_hint_x=None, width=300, spacing=10)
+        self.clear_mission_btn = Button(
+            text="Clear Mission", 
+            size_hint=(None, 1), 
+            width=120, 
+            background_color=(0.8,0.2,0.2,1),
+            font_size='12sp'
+        )
+        self.write_mission_btn = Button(
+            text="Write Mission", 
+            size_hint=(None, 1), 
+            width=120, 
+            background_color=(0.2,0.7,0.2,1),
+            font_size='12sp'
+        )
+        mission_controls.add_widget(self.clear_mission_btn)
+        mission_controls.add_widget(self.write_mission_btn)
+        primary_controls.add_widget(mission_controls)
+        
+        # Spacer
+        primary_controls.add_widget(Label(size_hint_x=1))
+        
+        controls.add_widget(primary_controls)
+        
+        # Row 2: Secondary controls
+        secondary_controls = BoxLayout(orientation='horizontal', size_hint=(1, None), height=35, spacing=12)
+        
+        # Map view controls
+        map_view_controls = BoxLayout(orientation='horizontal', size_hint_x=None, width=300, spacing=10)
+        self.satellite_toggle_mapplot = ToggleButton(
+            text="Satellite View", 
+            size_hint=(None, 1), 
+            width=110, 
+            background_color=(0.2, 0.6, 0.8, 1),
+            font_size='12sp'
+        )
+        
+        # Zoom controls
+        zoom_controls = BoxLayout(orientation='horizontal', size_hint=(None, 1), width=70, spacing=4)
+        self.zoom_in_btn_mapplot = Button(
+            text="+", 
+            size_hint=(None, 1), 
+            width=32, 
+            background_color=(0.2, 0.7, 0.2, 1), 
+            font_size='14sp'
+        )
+        self.zoom_out_btn_mapplot = Button(
+            text="-", 
+            size_hint=(None, 1), 
+            width=32, 
+            background_color=(0.7, 0.2, 0.2, 1), 
+            font_size='14sp'
+        )
+        zoom_controls.add_widget(self.zoom_out_btn_mapplot)
+        zoom_controls.add_widget(self.zoom_in_btn_mapplot)
+        
+        map_view_controls.add_widget(self.satellite_toggle_mapplot)
+        map_view_controls.add_widget(zoom_controls)
+        secondary_controls.add_widget(map_view_controls)
         
         # Add marker button
-        self.add_marker_btn = Button(text="Add Marker", size_hint=(None, 1), width=120, background_color=(0.8, 0.4, 0.2, 1))
+        self.add_marker_btn = Button(
+            text="Add Marker", 
+            size_hint=(None, 1), 
+            width=100, 
+            background_color=(0.8, 0.4, 0.2, 1),
+            font_size='12sp'
+        )
+        secondary_controls.add_widget(self.add_marker_btn)
         
+        # Spacer
+        secondary_controls.add_widget(Label(size_hint_x=1))
+        
+        controls.add_widget(secondary_controls)
+        layout.add_widget(controls)
+        
+        # Bind all buttons
         self.zoom_my_loc_btn.bind(on_release=self.zoom_to_my_location)
         self.zoom_last_marker_btn.bind(on_release=self.zoom_to_last_marker)
         self.clear_mission_btn.bind(on_release=self.clear_mission)
@@ -2468,16 +2719,7 @@ class MapPlotScreen(Screen):
         self.zoom_out_btn_mapplot.bind(on_release=self.zoom_out_mapplot)
         self.add_marker_btn.bind(on_release=self.show_add_marker_dialog)
         
-        controls.add_widget(self.zoom_my_loc_btn)
-        controls.add_widget(self.zoom_last_marker_btn)
-        controls.add_widget(self.clear_mission_btn)
-        controls.add_widget(self.write_mission_btn)
-        controls.add_widget(self.satellite_toggle_mapplot)
-        controls.add_widget(self.add_marker_btn)
-        controls.add_widget(self.zoom_out_btn_mapplot)
-        controls.add_widget(self.zoom_in_btn_mapplot)
-        controls.add_widget(Label(size_hint_x=1))
-        layout.add_widget(controls)
+        # Map view with better proportions
         try:
             self.mapview = MapView(zoom=16, lat=12.9716, lon=77.5946)
             layout.add_widget(self.mapview)
@@ -2493,7 +2735,15 @@ class MapPlotScreen(Screen):
                 layout.add_widget(self.webview)
             else:
                 layout.add_widget(Label(text="WebView not available. Please install kivy_garden.webview."))
-        back_btn = Button(text="Back to Main", size_hint=(1, 0.1), background_color=(0.2,0.5,0.8,1))
+        
+        # Back button with better styling
+        back_btn = Button(
+            text="Back to Main", 
+            size_hint=(1, None), 
+            height=40, 
+            background_color=(0.2,0.5,0.8,1),
+            font_size='14sp'
+        )
         back_btn.bind(on_release=self.go_back)
         layout.add_widget(back_btn)
         self.add_widget(layout)
