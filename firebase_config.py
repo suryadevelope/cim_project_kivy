@@ -2,14 +2,14 @@
 # Replace these values with your own Firebase project configuration
 
 FIREBASE_CONFIG = {
-  "apiKey": "AIzaSyCOanfw1qDie_c5l8OClkkWLtwD7DC4g_E",
-  "authDomain": "army-rover-new.firebaseapp.com",
-  "databaseURL": "https://army-rover-new-default-rtdb.firebaseio.com",
-  "projectId": "army-rover-new",
-  "storageBucket": "army-rover-new.firebasestorage.app",
-  "messagingSenderId": "533033277095",
-  "appId": "1:533033277095:web:0632e963db8a555b2d6d82",
-  "measurementId": "G-K7V64EM2WV"
+  "apiKey": "AIzaSyBw-vayMYjNPxZcrnMuAS5I1W9WRO1yZ0s",
+  "authDomain": "army-rover.firebaseapp.com",
+  "databaseURL": "https://army-rover-default-rtdb.firebaseio.com",
+  "projectId": "army-rover",
+  "storageBucket": "army-rover.firebasestorage.app",
+  "messagingSenderId": "270093464380",
+  "appId": "1:270093464380:web:3872b44054ef575765e439",
+  "measurementId": "G-4YZ5SN0VXR"
 }
 
 # Database paths for different control data
