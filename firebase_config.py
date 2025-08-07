@@ -17,7 +17,9 @@ FIREBASE_PATHS = {
     "joystick": "control/joystick",
     "autonomous": "control/autonomous", 
     "system_status": "system/status",
-    "sensors": "sensors/current"
+    "sensors": "sensors/current",
+    "mission_commands": "control/mission_commands",
+    "navigation_status": "control/navigation_status"
 }
 
 # Default control settings
