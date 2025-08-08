@@ -600,9 +600,9 @@ class MainScreen(Screen):
         autonomous_box.add_widget(mission_btn)
         
         # Start/Stop Buttons
-        button_box = BoxLayout(orientation='vertical', size_hint=(1, None), height=90, spacing=8)
-        start_btn = Button(text='Start', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.1, 0.5, 0.2, 1))
-        stop_btn = Button(text='Stop', size_hint=(1, None), height=40, font_size='16sp', background_color=(0.6, 0.1, 0.1, 1))
+        button_box = BoxLayout(orientation='horizontal', size_hint=(1, None), height=40, spacing=10)
+        start_btn = Button(text='Start', size_hint=(0.5, 1), font_size='16sp', background_color=(0.1, 0.5, 0.2, 1))
+        stop_btn = Button(text='Stop', size_hint=(0.5, 1), font_size='16sp', background_color=(0.6, 0.1, 0.1, 1))
         start_btn.bind(on_release=self.send_start_status)
         stop_btn.bind(on_release=self.send_stop_status)
         button_box.add_widget(start_btn)
