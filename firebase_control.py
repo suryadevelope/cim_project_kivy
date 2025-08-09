@@ -12,15 +12,15 @@ try:
 except ImportError as e:
     print(f"Error importing firebase_config: {e}")
     # Fallback configuration if config file doesn't exist
-    FIREBASE_CONFIG = {
-  "apiKey": "AIzaSyCOanfw1qDie_c5l8OClkkWLtwD7DC4g_E",
-  "authDomain": "army-rover-new.firebaseapp.com",
-  "databaseURL": "https://army-rover-new-default-rtdb.firebaseio.com",
-  "projectId": "army-rover-new",
-  "storageBucket": "army-rover-new.firebasestorage.app",
-  "messagingSenderId": "533033277095",
-  "appId": "1:533033277095:web:0632e963db8a555b2d6d82",
-  "measurementId": "G-K7V64EM2WV"
+    FIREBASE_CONFIG ={
+  "apiKey": "AIzaSyCTNMHMgYxwdQNoFlp2hLDxNNzKgQlKy0A",
+  "authDomain": "rover-d963e.firebaseapp.com",
+  "databaseURL": "https://rover-d963e-default-rtdb.firebaseio.com",
+  "projectId": "rover-d963e",
+  "storageBucket": "rover-d963e.firebasestorage.app",
+  "messagingSenderId": "330549730257",
+  "appId": "1:330549730257:web:6367442819a8cbe6791ef0",
+  "measurementId": "G-71GG5M4LDL"
 }
     
     FIREBASE_PATHS = {
