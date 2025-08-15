@@ -1592,19 +1592,21 @@ class MainScreen(Screen):
         
         # Update battery status
         try:
-            if float(batvoltage) <= 25:
-                self.img_src = './assets/bad_batt.png'
-            else:
-                self.img_src = './assets/good_batt.png'
+            if float(batvoltage)>0:
+                if float(batvoltage) <= 25:
+                    self.img_src = './assets/bad_batt.png'
+                else:
+                    self.img_src = './assets/good_batt.png'
         except (ValueError, TypeError) as e:
             print(f"[DEBUG] Error processing batvoltage: {e}")
             self.img_src = './assets/bad_batt.png'
             
         try:
-            if float(jetsonvoltage) <= 11.5:
-                self.jetsonimg_src = './assets/bad_batt.png'
-            else:
-                self.jetsonimg_src = './assets/good_batt.png'
+            if float(jetsonvoltage) > 0:
+                if float(jetsonvoltage) <= 11.5:
+                    self.jetsonimg_src = './assets/bad_batt.png'
+                else:
+                    self.jetsonimg_src = './assets/good_batt.png'
         except (ValueError, TypeError) as e:
             print(f"[DEBUG] Error processing jetsonvoltage: {e}")
             self.jetsonimg_src = './assets/bad_batt.png'
@@ -1631,9 +1633,11 @@ class MainScreen(Screen):
         # Update voltage labels and arm state label
         try:
             if hasattr(self, 'batt_voltage_label'):
-                self.batt_voltage_label.text = f"{float(batvoltage):.1f}V"
+                if float(batvoltage)>0:
+                    self.batt_voltage_label.text = f"{float(batvoltage):.1f}V"
             if hasattr(self, 'jetson_voltage_label'):
-                self.jetson_voltage_label.text = f"{float(jetsonvoltage):.1f}V"
+                if float(jetsonvoltage)>0:
+                    self.jetson_voltage_label.text = f"{float(jetsonvoltage):.1f}V"
             if hasattr(self, 'armstate_label'):
                 self.armstate_label.text = armstate_text
         except Exception as e:
