@@ -402,6 +402,7 @@ class MainScreen(Screen):
         self.allvideopopups = []
         self.image_widgets = []
         self.autonomous_event = None
+        self.joystick_control_enabled = False  # Initialize joystick control state
         
         # Enhanced autonomous data exchange system
         self.autonomous_data_exchange = {
@@ -459,12 +460,32 @@ class MainScreen(Screen):
             self.topbar_rect.pos = top_nav.pos
         top_nav.bind(size=update_topbar_rect, pos=update_topbar_rect)
         top_nav.add_widget(Image(source='./assets/logo.png', size_hint_x=None, width=50, allow_stretch=True, keep_ratio=True))
+        # Main battery with voltage label
+        main_batt_box = BoxLayout(orientation='vertical', size_hint=(None, 1), width=50, spacing=2)
         self.battimg = Image(source=self.img_src, size_hint_x=None, width=40, allow_stretch=True, keep_ratio=True)
-        top_nav.add_widget(self.battimg)
+        self.battimg.size_hint_y = 0.7
+        self.batt_voltage_label = Label(text="0.0V", size_hint_y=0.3, color=(1, 1, 1, 1), font_size='10sp')
+        main_batt_box.add_widget(self.battimg)
+        main_batt_box.add_widget(self.batt_voltage_label)
+        top_nav.add_widget(main_batt_box)
+        
+        # Jetson battery with voltage label
+        jetson_batt_box = BoxLayout(orientation='vertical', size_hint=(None, 1), width=50, spacing=2)
         self.jetsonbattimg = Image(source=self.jetsonimg_src, size_hint_x=None, width=40, allow_stretch=True, keep_ratio=True)
-        top_nav.add_widget(self.jetsonbattimg)
+        self.jetsonbattimg.size_hint_y = 0.7
+        self.jetson_voltage_label = Label(text="0.0V", size_hint_y=0.3, color=(1, 1, 1, 1), font_size='10sp')
+        jetson_batt_box.add_widget(self.jetsonbattimg)
+        jetson_batt_box.add_widget(self.jetson_voltage_label)
+        top_nav.add_widget(jetson_batt_box)
+        
+        # Arm state with status label
+        armstate_box = BoxLayout(orientation='vertical', size_hint=(None, 1), width=50, spacing=2)
         self.armstateimg = Image(source=self.img_src_armstate, size_hint_x=None, width=40, allow_stretch=True, keep_ratio=True)
-        top_nav.add_widget(self.armstateimg)
+        self.armstateimg.size_hint_y = 0.7
+        self.armstate_label = Label(text="Home", size_hint_y=0.3, color=(1, 1, 1, 1), font_size='10sp')
+        armstate_box.add_widget(self.armstateimg)
+        armstate_box.add_widget(self.armstate_label)
+        top_nav.add_widget(armstate_box)
         self.top_switch = Switch(active=False, size_hint_x=None, width=60)
         self.top_switch.bind(active=self.on_switch_active)
         top_nav.add_widget(self.top_switch)
@@ -817,12 +838,19 @@ class MainScreen(Screen):
             return False
 
     def on_switch_active(self, instance, value):
+        """Control joystick movement mode and auto cam zoom"""
         if value:
+            # Switch ON: Enable joystick control and auto cam zoom
             self.autoshowfullscreen = True
-            toast("Auto cam zoom mode ON")
+            self.joystick_control_enabled = True
+            toast("Joystick Control & Auto Cam Zoom ON")
+            print("Joystick control enabled - Front/Back/Gripper/Cams active")
         else:
+            # Switch OFF: Disable joystick control and auto cam zoom
             self.autoshowfullscreen = False
-            toast("Auto cam zoom mode OFF")
+            self.joystick_control_enabled = False
+            toast("Joystick Control & Auto Cam Zoom OFF")
+            print("Joystick control disabled - Manual mode only")
             if self.updatefullscreenval:
                 self.dismiss_full_screen(self.popup)
     
@@ -1587,14 +1615,29 @@ class MainScreen(Screen):
             try:
                 if int(armstate) == 1:
                     self.img_src_armstate = "./assets/no_home.png"
+                    armstate_text = "No Home"
                 else:
                     self.img_src_armstate = "./assets/at_home.png"
+                    armstate_text = "Home"
             except (ValueError, TypeError) as e:
                 print(f"[DEBUG] Error processing armstate: {e}")
                 self.img_src_armstate = "./assets/at_home.png"
+                armstate_text = "Home"
         else:
             # Default arm state for new structure
             self.img_src_armstate = "./assets/at_home.png"
+            armstate_text = "Home"
+        
+        # Update voltage labels and arm state label
+        try:
+            if hasattr(self, 'batt_voltage_label'):
+                self.batt_voltage_label.text = f"{float(batvoltage):.1f}V"
+            if hasattr(self, 'jetson_voltage_label'):
+                self.jetson_voltage_label.text = f"{float(jetsonvoltage):.1f}V"
+            if hasattr(self, 'armstate_label'):
+                self.armstate_label.text = armstate_text
+        except Exception as e:
+            print(f"[DEBUG] Error updating voltage labels: {e}")
 
         # GPS info from new structure
         self.satcount = str(gps_data.get("num_sats", "0"))
@@ -1952,7 +1995,12 @@ class MainScreen(Screen):
             self.gps_status_label.text = "Waiting for GPS 3D fix..."
 
     def update_joystickview(self, instance, value):
-        """Optimized joystick view update with throttling"""
+        """Optimized joystick view update with throttling and control mode check"""
+        # Check if joystick control is enabled
+        if not hasattr(self, 'joystick_control_enabled') or not self.joystick_control_enabled:
+            print("Joystick control disabled - ignoring joystick updates")
+            return
+            
         if self.autoshowfullscreen:
             value = int(value)
             if value >= 0:
@@ -2286,8 +2334,9 @@ class MainScreen(Screen):
     def start_autonomous_mission_sender(self):
         if self.autonomous_event is None:
             from kivy.clock import Clock
-            self.autonomous_event = Clock.schedule_interval(self.send_autonomous_mission, 1.0)
-            print("✅ Autonomous mission sender started")
+            # Use a longer interval to prevent UI blocking (5 seconds instead of 1 second)
+            self.autonomous_event = Clock.schedule_interval(self.send_autonomous_mission, 5.0)
+            print("✅ Autonomous mission sender started (5s interval)")
         else:
             print("⚠️ Autonomous mission sender already running")
 
