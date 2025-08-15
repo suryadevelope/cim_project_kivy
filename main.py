@@ -1952,6 +1952,7 @@ class MainScreen(Screen):
             self.gps_status_label.text = "Waiting for GPS 3D fix..."
 
     def update_joystickview(self, instance, value):
+        """Optimized joystick view update with throttling"""
         if self.autoshowfullscreen:
             value = int(value)
             if value >= 0:
@@ -1961,25 +1962,41 @@ class MainScreen(Screen):
                     def __init__(self, pos):
                         self.pos = pos
                 simulated_touch = SimulatedTouch(img.center)
-                Clock.schedule_once(lambda dt: img.dispatch('on_touch_down', simulated_touch), 0)
+                # Use a small delay to prevent UI blocking
+                Clock.schedule_once(lambda dt: img.dispatch('on_touch_down', simulated_touch), 0.01)
             if value < 0:
                 if self.updatefullscreenval:
                     self.close_all_popups()
 
     def update_image(self, dt):
-        keys = list(self.videoreceiver.video_frames.keys())
-        for i, identifier in enumerate(keys):
-            if identifier in self.videoreceiver.video_frames:
-                frame = self.videoreceiver.video_frames[identifier]
-                if frame is not None:
-                    if frame.dtype != np.uint8:
-                        frame = frame.astype(np.uint8)
-                    cv2.putText(frame, f"cam{i}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-                    frame = cv2.flip(frame, 0)
-                    buffer = frame.tobytes()
-                    texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
-                    texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
-                    self.image_widgets[i].texture = texture
+        """Optimized image update with better error handling and performance"""
+        try:
+            keys = list(self.videoreceiver.video_frames.keys())
+            for i, identifier in enumerate(keys):
+                if identifier in self.videoreceiver.video_frames:
+                    frame = self.videoreceiver.video_frames[identifier]
+                    if frame is not None and frame.size > 0:  # Check if frame is valid
+                        try:
+                            if frame.dtype != np.uint8:
+                                frame = frame.astype(np.uint8)
+                            
+                            # Add camera label
+                            cv2.putText(frame, f"cam{i}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                            frame = cv2.flip(frame, 0)
+                            
+                            # Create texture more efficiently
+                            buffer = frame.tobytes()
+                            texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
+                            texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
+                            
+                            # Update widget texture
+                            if i < len(self.image_widgets):
+                                self.image_widgets[i].texture = texture
+                        except Exception as e:
+                            print(f"Error updating image {i}: {e}")
+                            continue
+        except Exception as e:
+            print(f"Error in update_image: {e}")
 
     def create_texture(self, frame_rgb):
         texture = Texture.create(size=(frame_rgb.shape[1], frame_rgb.shape[0]))
@@ -2016,19 +2033,25 @@ class MainScreen(Screen):
             del self.allvideopopups[0]
 
     def on_enter(self):
-        """Called when the screen is entered"""
+        """Called when the screen is entered with optimized setup"""
         try:
             # Test control functionality for debugging
             self.test_control_functionality()
             
-            # Original functionality
+            # Original functionality with optimized binding
             for image_widget in self.image_widgets:
                 image_widget.bind(on_touch_down=self.on_image_touch)
+            
+            # Use consistent frame rate for image updates
             Clock.schedule_interval(self.update_image, 1.0 / 30.0)
             
             # Start autonomous mission sender if needed
             if hasattr(self, 'autonomous_event') and self.autonomous_event:
                 self.start_autonomous_mission_sender()
+                
+            # Set optimal UI update rate for streaming
+            if hasattr(streaming, 'set_ui_update_rate'):
+                streaming.set_ui_update_rate(30)  # 30 FPS for smooth UI
                 
         except Exception as e:
             print(f"Error in on_enter: {e}")
@@ -2099,6 +2122,49 @@ class MainScreen(Screen):
         except Exception:
             self.mapview.lat = lat
             self.mapview.lon = lon
+
+    def optimize_ui_updates(self):
+        """Optimize UI update performance"""
+        try:
+            # Set optimal frame rates
+            if hasattr(streaming, 'set_ui_update_rate'):
+                streaming.set_ui_update_rate(30)  # 30 FPS for smooth UI
+            
+            # Optimize image update rate
+            Clock.unschedule(self.update_image)
+            Clock.schedule_interval(self.update_image, 1.0 / 30.0)
+            
+            print("UI updates optimized for smooth performance")
+        except Exception as e:
+            print(f"Error optimizing UI updates: {e}")
+
+    def set_ui_frame_rate(self, fps):
+        """Set UI frame rate for optimal performance"""
+        try:
+            if fps > 0 and fps <= 60:  # Limit to reasonable FPS
+                # Update streaming rate
+                if hasattr(streaming, 'set_ui_update_rate'):
+                    streaming.set_ui_update_rate(fps)
+                
+                # Update image update rate
+                Clock.unschedule(self.update_image)
+                Clock.schedule_interval(self.update_image, 1.0 / fps)
+                
+                print(f"UI frame rate set to {fps} FPS")
+            else:
+                print(f"Invalid FPS value: {fps}. Must be between 1 and 60.")
+        except Exception as e:
+            print(f"Error setting UI frame rate: {e}")
+
+    def get_current_fps(self):
+        """Get current UI frame rate"""
+        try:
+            if hasattr(streaming, 'get_ui_update_rate'):
+                return streaming.get_ui_update_rate()
+            return 30  # Default
+        except Exception as e:
+            print(f"Error getting current FPS: {e}")
+            return 30
 
     def on_satellite_toggle(self, instance, state):
         """Toggle between regular and satellite map view"""

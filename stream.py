@@ -11,6 +11,8 @@ import ast
 from kivy.clock import Clock
 from kivy.event import EventDispatcher
 from kivymd.toast import toast
+from collections import deque
+from kivy.properties import NumericProperty, ObjectProperty, StringProperty
 
 # Firebase imports
 try:
@@ -19,8 +21,6 @@ try:
 except ImportError:
     FIREBASE_AVAILABLE = False
     print("Firebase not available in stream.py")
-
-from kivy.properties import NumericProperty, ObjectProperty, StringProperty
 
 # Network Configuration
 Stream_2_IP = "192.168.1.10"
@@ -103,6 +103,13 @@ class Stream(EventDispatcher):
     firebase_control = None
     data_lock = Lock()  # Thread safety for data updates
     
+    # UI update optimization
+    _ui_update_pending = False
+    _last_ui_update = 0
+    _ui_update_interval = 1.0 / 30.0  # 30 FPS max
+    _data_buffer = deque(maxlen=10)  # Buffer for data updates
+    _joystick_buffer = deque(maxlen=5)  # Buffer for joystick updates
+    
     def __init__(self, **kwargs):
         super(Stream, self).__init__(**kwargs)
         
@@ -124,6 +131,35 @@ class Stream(EventDispatcher):
         if self.control_mode == "hardware":
             self.joystick_thread = Thread(target=self.runjoystick, daemon=True)
             self.joystick_thread.start()
+        
+        # Schedule UI updates at a consistent rate
+        Clock.schedule_interval(self._process_ui_updates, self._ui_update_interval)
+
+    def _process_ui_updates(self, dt):
+        """Process pending UI updates at a consistent frame rate"""
+        current_time = time.time()
+        
+        # Process data updates
+        if self._data_buffer and current_time - self._last_ui_update >= self._ui_update_interval:
+            try:
+                # Get the most recent data
+                latest_data = self._data_buffer[-1]
+                with self.data_lock:
+                    self.update_utils = json.dumps(latest_data)
+                    self.update_event += 1
+                self._last_ui_update = current_time
+                self._data_buffer.clear()  # Clear processed data
+            except Exception as e:
+                print(f"Error processing UI updates: {e}")
+
+    def _queue_data_update(self, data):
+        """Queue data for UI update instead of immediate update"""
+        try:
+            with self.data_lock:
+                data['_timestamp'] = time.time()
+                self._data_buffer.append(data)
+        except Exception as e:
+            print(f"Error queuing data update: {e}")
 
     def set_control_mode(self, mode):
         """Set control mode (hardware or internet)"""
@@ -207,7 +243,7 @@ class Stream(EventDispatcher):
         return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
     def runjoystick(self): 
-        """Initialize the pygame library and joysticks"""
+        """Initialize the pygame library and joysticks with optimized update rate"""
         try:
             pygame.init()
             pygame.joystick.init()
@@ -222,8 +258,16 @@ class Stream(EventDispatcher):
             
             print(f"Joystick initialized: {joystick.get_name()}")
             
+            last_update = 0
+            update_interval = 0.05  # 20Hz update rate for joystick (reduced from 50Hz)
+            
             while True:
                 pygame.event.pump()
+                
+                current_time = time.time()
+                if current_time - last_update < update_interval:
+                    time.sleep(0.001)  # Small sleep to reduce CPU usage
+                    continue
                 
                 # Read joystick values
                 x_axis = joystick.get_axis(0)  # Left/Right
@@ -292,7 +336,7 @@ class Stream(EventDispatcher):
                 if self.control_mode == "internet":
                     self.send_joystick_to_firebase(data)
                 
-                time.sleep(0.02)  # 50Hz update rate
+                last_update = current_time
                 
         except Exception as e:
             print(f"Error in joystick thread: {e}")
@@ -336,7 +380,7 @@ class Stream(EventDispatcher):
             print(f"Error processing UDP data: {e}")
 
     def process_json_data(self, json_data):
-        """Process JSON format data"""
+        """Process JSON format data with optimized UI updates"""
         try:
             # Handle new Firebase data structure
             if "sensors" in json_data and "current" in json_data["sensors"]:
@@ -366,13 +410,10 @@ class Stream(EventDispatcher):
                     "test": json_data.get("test", {})
                 }
                 
-                # Update with thread safety
-                with self.data_lock:
-                    complete_data['_timestamp'] = time.time()
-                    self.update_utils = json.dumps(complete_data)
-                    self.update_event += 1
+                # Queue data for UI update instead of immediate update
+                self._queue_data_update(complete_data)
                 
-                # Update compass widget
+                # Update compass widget immediately (this is lightweight)
                 self.update_compass_widget(sensors_data.get("compass", "0"))
                 
             else:
@@ -384,10 +425,8 @@ class Stream(EventDispatcher):
                     **self.parse_utils_string(json_data.get("utils", ""))
                 }
                 
-                with self.data_lock:
-                    complete_data['_timestamp'] = time.time()
-                    self.update_utils = json.dumps(complete_data)
-                    self.update_event += 1
+                # Queue data for UI update
+                self._queue_data_update(complete_data)
                 
                 self.update_compass_widget(json_data.get("compass", "0"))
                 
@@ -395,7 +434,7 @@ class Stream(EventDispatcher):
             print(f"Error processing JSON data: {e}")
 
     def process_legacy_data(self, data):
-        """Process legacy format data"""
+        """Process legacy format data with optimized UI updates"""
         try:
             if data.startswith("#"):
                 parts = data[1:].split("=")
@@ -408,10 +447,8 @@ class Stream(EventDispatcher):
                         "compass": parts[3]
                     }
                     
-                    with self.data_lock:
-                        legacy_data['_timestamp'] = time.time()
-                        self.update_utils = json.dumps(legacy_data)
-                        self.update_event += 1
+                    # Queue data for UI update
+                    self._queue_data_update(legacy_data)
                     
                     self.update_compass_widget(parts[3])
                 else:
@@ -452,3 +489,16 @@ class Stream(EventDispatcher):
     def setcompasswidget(self, compasswidget=None):
         """Set compass widget reference"""
         self.compasswidget = compasswidget
+
+    def set_ui_update_rate(self, fps):
+        """Set the UI update rate in FPS"""
+        if fps > 0:
+            self._ui_update_interval = 1.0 / fps
+            # Reschedule the UI update timer
+            Clock.unschedule(self._process_ui_updates)
+            Clock.schedule_interval(self._process_ui_updates, self._ui_update_interval)
+            print(f"UI update rate set to {fps} FPS")
+
+    def get_ui_update_rate(self):
+        """Get current UI update rate in FPS"""
+        return int(1.0 / self._ui_update_interval) if self._ui_update_interval > 0 else 0
