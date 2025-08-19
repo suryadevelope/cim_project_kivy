@@ -714,6 +714,9 @@ class MainScreen(Screen):
                 print("Firebase not available or not connected, skipping mode check")
                 return
             
+            # Check if we have an active mission that should preserve internet mode
+            has_active_internet_mission = self.check_active_internet_mission()
+            
             # Get the current mode from Firebase system status
             try:
                 system_path = FIREBASE_PATHS["system_status"].split("/")
@@ -722,6 +725,15 @@ class MainScreen(Screen):
                 if firebase_system_status.val():
                     firebase_mode = firebase_system_status.val().get("control_mode", "hardware")
                     print(f"Firebase system status found: control_mode = {firebase_mode}")
+                    
+                    # If we have an active internet mission, prioritize internet mode
+                    if has_active_internet_mission:
+                        print("Active internet mission detected at startup, ensuring internet mode")
+                        if self.control_mode != "internet":
+                            self.implement_internet_mode()
+                        # Update Firebase to match our mode
+                        self.update_firebase_system_status()
+                        return
                     
                     # Check if the mode is different from current
                     if firebase_mode != self.control_mode:
@@ -748,13 +760,27 @@ class MainScreen(Screen):
                             print("Synchronizing Firebase control mode")
                             self.firebase_control.set_control_mode(firebase_mode)
                 else:
-                    print("No Firebase system status found, defaulting to hardware mode")
-                    self.control_mode = "hardware"
+                    # No Firebase system status found - check if we should preserve internet mode
+                    if has_active_internet_mission:
+                        print("No Firebase system status but active internet mission detected, preserving internet mode")
+                        if self.control_mode != "internet":
+                            self.implement_internet_mode()
+                        # Create Firebase system status
+                        self.update_firebase_system_status()
+                    else:
+                        print("No Firebase system status found, defaulting to hardware mode")
+                        self.control_mode = "hardware"
                     
             except Exception as e:
                 print(f"Error reading Firebase system status: {e}")
-                print("Defaulting to hardware mode")
-                self.control_mode = "hardware"
+                # Check if we should preserve internet mode even on error
+                if has_active_internet_mission:
+                    print("Error reading Firebase but active internet mission detected, preserving internet mode")
+                    if self.control_mode != "internet":
+                        self.implement_internet_mode()
+                else:
+                    print("Defaulting to hardware mode")
+                    self.control_mode = "hardware"
             
             # Update the control mode button to reflect the current mode
             self.update_control_mode_button()
@@ -844,6 +870,9 @@ class MainScreen(Screen):
             if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
                 return
             
+            # Check if we have an active mission in internet mode before allowing mode changes
+            has_active_internet_mission = self.check_active_internet_mission()
+            
             # Use the new sync method from Firebase control
             if hasattr(self.firebase_control, 'sync_mode_from_firebase'):
                 mode_changed = self.firebase_control.sync_mode_from_firebase()
@@ -852,6 +881,14 @@ class MainScreen(Screen):
                     firebase_mode = self.firebase_control.get_control_mode()
                     print(f"=== FIREBASE MODE CHANGE DETECTED ===")
                     print(f"Firebase mode: {firebase_mode}, Previous mode: {self.control_mode}")
+                    
+                    # If we have an active internet mission, be more careful about mode changes
+                    if has_active_internet_mission and self.control_mode == "internet":
+                        print("⚠️ Active internet mission detected, preserving internet mode")
+                        # Force Firebase to match our current mode
+                        self.firebase_control.set_control_mode("internet")
+                        self.update_firebase_system_status()
+                        return
                     
                     # Implement the new mode
                     if firebase_mode == "internet":
@@ -871,6 +908,82 @@ class MainScreen(Screen):
         except Exception as e:
             print(f"Error monitoring Firebase mode changes: {e}")
             self.handle_mode_sync_error("monitoring", str(e))
+
+    def monitor_firebase_mode_changes_intelligent(self):
+        """Intelligent monitoring of Firebase mode changes with mission awareness"""
+        try:
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                return
+            
+            # Check if we have an active mission in internet mode
+            has_active_internet_mission = self.check_active_internet_mission()
+            
+            # If we have an active internet mission, be very conservative about mode changes
+            if has_active_internet_mission and self.control_mode == "internet":
+                print("🛡️ Active internet mission detected, protecting internet mode from automatic changes")
+                # Only allow mode changes if explicitly requested by user or if there's a critical error
+                # For now, just ensure Firebase matches our mode
+                if self.firebase_control.get_control_mode() != "internet":
+                    print("Synchronizing Firebase to match our protected internet mode")
+                    self.firebase_control.set_control_mode("internet")
+                    self.update_firebase_system_status()
+                return
+            
+            # If no active mission, proceed with normal mode monitoring
+            self.monitor_firebase_mode_changes()
+                        
+        except Exception as e:
+            print(f"Error in intelligent mode monitoring: {e}")
+            self.handle_mode_sync_error("intelligent_monitoring", str(e))
+
+    def check_active_internet_mission(self):
+        """Check if there's an active mission that should preserve internet mode"""
+        try:
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                return False
+            
+            # Check if there's mission data in Firebase
+            from firebase_config import FIREBASE_PATHS
+            autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+            mission_data = self.firebase_control.db.child(*autonomous_path).get().val()
+            
+            if mission_data:
+                mission_points = mission_data.get("mission", [])
+                mission_status = mission_data.get("status", "stop")
+                
+                # If we have mission points and the status is not explicitly "stop", preserve internet mode
+                if mission_points and len(mission_points) > 0 and mission_status != "stop":
+                    print(f"Active internet mission detected: {len(mission_points)} waypoints, status: {mission_status}")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error checking active internet mission: {e}")
+            return False
+
+    def update_firebase_system_status(self):
+        """Update Firebase system status to reflect current local state"""
+        try:
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                return False
+            
+            system_status = {
+                "control_mode": self.control_mode,
+                "firebase_connected": self.autonomous_data_exchange["firebase_connected"],
+                "last_heartbeat": time.time(),
+                "online": True,
+                "timestamp": time.time()
+            }
+            
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            self.firebase_control.db.child(*system_path).set(system_status)
+            print(f"✅ Firebase system status updated: {self.control_mode}")
+            return True
+            
+        except Exception as e:
+            print(f"Error updating Firebase system status: {e}")
+            return False
 
     def handle_mode_sync_error(self, error_type, error_details):
         """Handle mode synchronization errors and log them"""
@@ -1143,6 +1256,9 @@ class MainScreen(Screen):
         try:
             print(f"Attempting to toggle control mode from {self.control_mode}")
             
+            # Check if we have an active mission that should preserve internet mode
+            has_active_internet_mission = self.check_active_internet_mission()
+            
             if self.control_mode == "hardware":
                 # Switching to internet mode
                 print("Checking internet connectivity for internet mode...")
@@ -1171,6 +1287,12 @@ class MainScreen(Screen):
             else:
                 # Switching to hardware mode
                 print("Checking hardware connectivity for hardware mode...")
+                
+                # Check if we're trying to switch away from internet mode with an active mission
+                if has_active_internet_mission:
+                    print("⚠️ Cannot switch to hardware mode: Active internet mission detected")
+                    toast("Cannot switch to hardware mode while internet mission is active")
+                    return
                 
                 if not self.autonomous_data_exchange["hardware_connected"]:
                     toast("Hardware connectivity required for hardware mode")
@@ -2557,7 +2679,36 @@ class MainScreen(Screen):
         except Exception as e:
             print(f"Zoom out error: {e}")
 
+    def check_mode_before_start(self):
+        """Check and preserve the appropriate mode before starting a mission"""
+        try:
+            print("=== CHECKING MODE BEFORE START ===")
+            
+            # Check if we have an active mission that should preserve internet mode
+            has_active_internet_mission = self.check_active_internet_mission()
+            
+            if has_active_internet_mission:
+                if self.control_mode != "internet":
+                    print("Active internet mission detected, switching to internet mode before start")
+                    self.implement_internet_mode()
+                    # Update Firebase to reflect the mode change
+                    self.update_firebase_system_status()
+                    return True
+                else:
+                    print("Already in internet mode for active mission")
+                    return True
+            else:
+                print("No active internet mission, current mode maintained")
+                return False
+                
+        except Exception as e:
+            print(f"Error checking mode before start: {e}")
+            return False
+
     def send_start_status(self, instance):
+        # Check and preserve mode before starting
+        self.check_mode_before_start()
+        
         self.last_status = 'start'
         if self.control_mode == "hardware":
             self.send_status_udp('start')
@@ -2584,6 +2735,8 @@ class MainScreen(Screen):
                 # Send updated mission data to Firebase
                 success = self.firebase_control.send_autonomous_mission(updated_mission_data)
                 if success:
+                    # Ensure Firebase system status reflects internet mode
+                    self.update_firebase_system_status()
                     toast("Mission started via Firebase")
                     print(f"✅ Mission started with {len(mission_points)} waypoints")
                 else:
@@ -2597,6 +2750,9 @@ class MainScreen(Screen):
                 toast("Error starting mission via Firebase")
 
     def send_stop_status(self, instance):
+        # Check and preserve mode before stopping
+        self.check_mode_before_start()
+        
         self.last_status = 'stop'
         if self.control_mode == "hardware":
             self.send_status_udp('stop')
@@ -2623,6 +2779,8 @@ class MainScreen(Screen):
                 # Send updated mission data to Firebase
                 success = self.firebase_control.send_autonomous_mission(updated_mission_data)
                 if success:
+                    # Update Firebase system status to reflect current mode
+                    self.update_firebase_system_status()
                     toast("Mission stopped via Firebase")
                     print(f"✅ Mission stopped with {len(mission_points)} waypoints preserved")
                 else:
@@ -2860,8 +3018,8 @@ class MainScreen(Screen):
             def sync_mode_periodically(dt):
                 try:
                     if self.firebase_control and self.autonomous_data_exchange["firebase_connected"]:
-                        # Check for mode changes every 3 seconds
-                        self.monitor_firebase_mode_changes()
+                        # Check for mode changes every 3 seconds, but be more intelligent about it
+                        self.monitor_firebase_mode_changes_intelligent()
                 except Exception as e:
                     print(f"Error in periodic mode sync: {e}")
             
@@ -2880,6 +3038,42 @@ class MainScreen(Screen):
                 print("✅ Periodic mode synchronization stopped")
         except Exception as e:
             print(f"Error stopping periodic mode sync: {e}")
+
+    def preserve_internet_mode_for_mission(self):
+        """Preserve internet mode when there's an active mission"""
+        try:
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                return False
+            
+            # Check if there's an active mission
+            has_active_mission = self.check_active_internet_mission()
+            
+            if has_active_mission and self.control_mode != "internet":
+                print("Active mission detected, switching to internet mode")
+                self.implement_internet_mode()
+                # Update Firebase to reflect the mode change
+                self.update_firebase_system_status()
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error preserving internet mode for mission: {e}")
+            return False
+
+    def on_return_from_mission_planning(self):
+        """Called when returning from mission planning to ensure proper mode"""
+        try:
+            print("=== RETURNING FROM MISSION PLANNING ===")
+            
+            # Check if we should preserve internet mode
+            if self.preserve_internet_mode_for_mission():
+                print("✅ Internet mode preserved for active mission")
+            else:
+                print("No active mission, mode unchanged")
+                
+        except Exception as e:
+            print(f"Error handling return from mission planning: {e}")
 
 
 # --- Map Plotting Screen ---
@@ -3197,6 +3391,12 @@ class MapPlotScreen(Screen):
                             main_screen.firebase_control.set_control_mode("internet")
                             print(f"Firebase control mode after sync: {main_screen.firebase_control.get_control_mode()}")
                         
+                        # Ensure main screen control mode is also set to internet
+                        if main_screen.control_mode != "internet":
+                            print("Setting main screen control mode to internet")
+                            main_screen.control_mode = "internet"
+                            main_screen.update_control_mode_button()
+                        
                         # Test Firebase connection before sending
                         if not main_screen.firebase_control.is_firebase_connected():
                             print("Firebase not connected, attempting to test connection...")
@@ -3212,6 +3412,8 @@ class MapPlotScreen(Screen):
                         
                         success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
                         if success:
+                            # Update Firebase system status to reflect internet mode
+                            main_screen.update_firebase_system_status()
                             Clock.schedule_once(lambda dt: toast("Mission sent successfully to Firebase!"))
                             print(f"✅ Successfully sent mission to Firebase: {len(mission_points)} waypoints")
                         else:
@@ -3359,6 +3561,16 @@ class MapPlotScreen(Screen):
         popup.open()
 
     def go_back(self, instance):
+        # Call mode preservation method before going back
+        try:
+            app = App.get_running_app()
+            if hasattr(app, 'root') and app.root is not None:
+                main_screen = app.root.get_screen('main')
+                if hasattr(main_screen, 'on_return_from_mission_planning'):
+                    main_screen.on_return_from_mission_planning()
+        except Exception as e:
+            print(f"Error calling mode preservation: {e}")
+        
         self.manager.current = 'main'
 
 
