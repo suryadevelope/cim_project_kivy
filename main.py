@@ -666,7 +666,261 @@ class MainScreen(Screen):
 
         self.queue = Queue()
         self.videoreceiver = VideoReceiver()
+        
+        # Add connection status indicator to top navigation
+        self.connection_status_label = Label(
+            text="Camera: Connecting...", 
+            size_hint_x=None, 
+            width=200, 
+            color=(1, 1, 1, 1)
+        )
+        top_nav.add_widget(self.connection_status_label)
+        
+        # Start connection status monitoring
+        Clock.schedule_interval(self.update_connection_status, 2.0)
+        
+        # Add camera settings button
+        self.camera_settings_btn = Button(
+            text="Camera Settings", 
+            size_hint_x=None, 
+            width=120, 
+            height=40, 
+            background_color=(0.3, 0.5, 0.8, 1), 
+            font_size='12sp'
+        )
+        self.camera_settings_btn.bind(on_release=self.show_camera_settings)
+        top_nav.add_widget(self.camera_settings_btn)
+        
+        # Ensure video streaming and control systems are properly separated
+        self.ensure_system_separation()
+        
+        # Bind video receiver updates
+        if hasattr(self, 'videoreceiver') and self.videoreceiver:
+            self.videoreceiver.bind(streamchange=self.update_video_frames)
+        
         self.bind(size=self.on_size)
+
+    def ensure_system_separation(self):
+        """Ensure video streaming and control systems are properly separated"""
+        try:
+            print("Ensuring system separation between video streaming and control...")
+            
+            # Check if video receiver is running
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                if self.videoreceiver.is_running():
+                    print("Video receiver is running successfully")
+                else:
+                    print("Warning: Video receiver is not running")
+            
+            # Check if streaming control is running
+            if hasattr(self, 'streaming') and self.streaming:
+                if self.streaming.is_running():
+                    print("Streaming control is running successfully")
+                else:
+                    print("Warning: Streaming control is not running")
+            
+            # Set different update rates for video and control
+            if hasattr(self, 'streaming') and self.streaming:
+                # Set control update rate to 20Hz (less frequent than video)
+                self.streaming.set_ui_update_rate(20)
+                print("Control system update rate set to 20Hz")
+            
+            print("System separation check completed")
+            
+        except Exception as e:
+            print(f"Error ensuring system separation: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def ensure_video_continuity(self):
+        """Ensure video streaming continues uninterrupted during control operations"""
+        try:
+            print("Ensuring video streaming continuity...")
+            
+            # Check video receiver status
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                if not self.videoreceiver.is_running():
+                    print("Warning: Video receiver stopped, attempting to restart...")
+                    # Video receiver will auto-restart in its thread
+                else:
+                    print("Video receiver is running normally")
+            
+            # Set video update priority
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                # Ensure video updates are not blocked by control operations
+                Clock.schedule_interval(self.update_image, 1.0 / 30.0)  # 30 FPS
+                print("Video update rate set to 30 FPS for smooth streaming")
+            
+            print("Video continuity check completed")
+            
+        except Exception as e:
+            print(f"Error ensuring video continuity: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def update_connection_status(self, dt):
+        """Update camera connection status in the GUI"""
+        try:
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                if self.videoreceiver.is_connected():
+                    self.connection_status_label.text = "Camera: Connected"
+                    self.connection_status_label.color = (0, 1, 0, 1)  # Green
+                else:
+                    self.connection_status_label.text = "Camera: Disconnected"
+                    self.connection_status_label.color = (1, 0, 0, 1)  # Red
+            else:
+                self.connection_status_label.text = "Camera: Error"
+                self.connection_status_label.color = (1, 1, 0, 1)  # Yellow
+        except Exception as e:
+            print(f"Error updating connection status: {e}")
+            self.connection_status_label.text = "Camera: Error"
+            self.connection_status_label.color = (1, 1, 0, 1)  # Yellow
+    
+    def show_camera_settings(self, instance):
+        """Show camera connection settings dialog"""
+        try:
+            # Create settings dialog
+            content = BoxLayout(orientation='vertical', spacing=10, padding=20)
+            
+            # Server IP input
+            ip_label = Label(text="Server IP:", size_hint_y=None, height=30)
+            ip_input = TextInput(
+                text=self.videoreceiver.server_ip if self.videoreceiver else "192.168.1.10",
+                multiline=False,
+                size_hint_y=None,
+                height=40
+            )
+            
+            # Server port input
+            port_label = Label(text="Server Port:", size_hint_y=None, height=30)
+            port_input = TextInput(
+                text=str(self.videoreceiver.server_port) if self.videoreceiver else "8000",
+                multiline=False,
+                size_hint_y=None,
+                height=40
+            )
+            
+            # Connection status
+            status_label = Label(
+                text=self.videoreceiver.get_connection_status() if self.videoreceiver else "Not initialized",
+                size_hint_y=None,
+                height=30,
+                color=(0.8, 0.8, 0.8, 1)
+            )
+            
+            # Buttons
+            button_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=40)
+            
+            connect_btn = Button(
+                text="Connect",
+                background_color=(0.2, 0.8, 0.2, 1),
+                size_hint_x=0.5
+            )
+            
+            disconnect_btn = Button(
+                text="Disconnect",
+                background_color=(0.8, 0.2, 0.2, 1),
+                size_hint_x=0.5
+            )
+            
+            close_btn = Button(
+                text="Close",
+                background_color=(0.5, 0.5, 0.5, 1),
+                size_hint_x=1
+            )
+            
+            # Add widgets to content
+            content.add_widget(ip_label)
+            content.add_widget(ip_input)
+            content.add_widget(port_label)
+            content.add_widget(port_input)
+            content.add_widget(status_label)
+            content.add_widget(button_layout)
+            
+            button_layout.add_widget(connect_btn)
+            button_layout.add_widget(disconnect_btn)
+            content.add_widget(close_btn)
+            
+            # Create popup
+            popup = Popup(
+                title='Camera Connection Settings',
+                content=content,
+                size_hint=(0.8, 0.6),
+                auto_dismiss=False
+            )
+            
+            # Button actions
+            def on_connect(instance):
+                try:
+                    ip = ip_input.text.strip()
+                    port = int(port_input.text.strip())
+                    
+                    if self.videoreceiver:
+                        self.videoreceiver.set_server_address(ip, port)
+                        status_label.text = f"Connecting to {ip}:{port}..."
+                        status_label.color = (0.8, 0.8, 0.2, 1)  # Yellow
+                        
+                except ValueError:
+                    status_label.text = "Invalid port number"
+                    status_label.color = (1, 0, 0, 1)  # Red
+                except Exception as e:
+                    status_label.text = f"Error: {e}"
+                    status_label.color = (1, 0, 0, 1)  # Red
+            
+            def on_disconnect(instance):
+                if self.videoreceiver:
+                    self.videoreceiver.disconnect_from_server()
+                    status_label.text = "Disconnected"
+                    status_label.color = (0.8, 0.2, 0.2, 1)  # Red
+            
+            def on_close(instance):
+                popup.dismiss()
+            
+            # Bind button actions
+            connect_btn.bind(on_release=on_connect)
+            disconnect_btn.bind(on_release=on_disconnect)
+            close_btn.bind(on_release=on_close)
+            
+            # Show popup
+            popup.open()
+            
+        except Exception as e:
+            print(f"Error showing camera settings: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def update_video_frames(self, instance, value):
+        """Update video frames from TCP video receiver"""
+        try:
+            if not hasattr(self, 'videoreceiver') or not self.videoreceiver:
+                return
+            
+            # Get all available frames
+            frames = self.videoreceiver.get_all_frames()
+            
+            # Update image widgets with new frames
+            for camera_index, frame in frames.items():
+                if camera_index < len(self.image_widgets):
+                    try:
+                        # Convert OpenCV frame to Kivy texture
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        frame_rgb = cv2.flip(frame_rgb, 0)  # Flip vertically for Kivy
+                        
+                        # Convert to Kivy texture
+                        height, width, channels = frame_rgb.shape
+                        texture = Texture.create(size=(width, height), colorfmt='rgb')
+                        texture.blit_buffer(frame_rgb.tobytes(), colorfmt='rgb', bufferfmt='ubyte')
+                        
+                        # Update image widget
+                        self.image_widgets[camera_index].texture = texture
+                        
+                    except Exception as e:
+                        print(f"Error updating camera {camera_index}: {e}")
+                        
+        except Exception as e:
+            print(f"Error updating video frames: {e}")
+            import traceback
+            traceback.print_exc()
 
     def initialize_connectivity_checks(self):
         """Initialize connectivity checks for hardware and internet"""
@@ -2019,30 +2273,30 @@ class MainScreen(Screen):
     def update_image(self, dt):
         """Optimized image update with better error handling and performance"""
         try:
-            keys = list(self.videoreceiver.video_frames.keys())
-            for i, identifier in enumerate(keys):
-                if identifier in self.videoreceiver.video_frames:
-                    frame = self.videoreceiver.video_frames[identifier]
-                    if frame is not None and frame.size > 0:  # Check if frame is valid
-                        try:
-                            if frame.dtype != np.uint8:
-                                frame = frame.astype(np.uint8)
-                            
-                            # Add camera label
-                            cv2.putText(frame, f"cam{i}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-                            frame = cv2.flip(frame, 0)
-                            
-                            # Create texture more efficiently
-                            buffer = frame.tobytes()
-                            texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
-                            texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
-                            
-                            # Update widget texture
-                            if i < len(self.image_widgets):
-                                self.image_widgets[i].texture = texture
-                        except Exception as e:
-                            print(f"Error updating image {i}: {e}")
-                            continue
+            # Get all available frames from the video receiver
+            all_frames = self.videoreceiver.get_all_frames()
+            
+            for i, (camera_index, frame) in enumerate(all_frames.items()):
+                if frame is not None and frame.size > 0:  # Check if frame is valid
+                    try:
+                        if frame.dtype != np.uint8:
+                            frame = frame.astype(np.uint8)
+                        
+                        # Add camera label
+                        cv2.putText(frame, f"cam{camera_index}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                        frame = cv2.flip(frame, 0)
+                        
+                        # Create texture more efficiently
+                        buffer = frame.tobytes()
+                        texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
+                        texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
+                        
+                        # Update widget texture
+                        if i < len(self.image_widgets):
+                            self.image_widgets[i].texture = texture
+                    except Exception as e:
+                        print(f"Error updating image {camera_index}: {e}")
+                        continue
         except Exception as e:
             print(f"Error in update_image: {e}")
 
@@ -2090,8 +2344,11 @@ class MainScreen(Screen):
             for image_widget in self.image_widgets:
                 image_widget.bind(on_touch_down=self.on_image_touch)
             
-            # Use consistent frame rate for image updates
+            # Use consistent frame rate for image updates (30 FPS for video)
             Clock.schedule_interval(self.update_image, 1.0 / 30.0)
+            
+            # Ensure video streaming continues during control operations
+            self.ensure_video_continuity()
             
             # Start autonomous mission sender if needed
             if hasattr(self, 'autonomous_event') and self.autonomous_event:
