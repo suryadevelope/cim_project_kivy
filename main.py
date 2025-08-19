@@ -2085,30 +2085,30 @@ class MainScreen(Screen):
     def update_image(self, dt):
         """Optimized image update with better error handling and performance"""
         try:
-            keys = list(self.videoreceiver.video_frames.keys())
-            for i, identifier in enumerate(keys):
-                if identifier in self.videoreceiver.video_frames:
-                    frame = self.videoreceiver.video_frames[identifier]
-                    if frame is not None and frame.size > 0:  # Check if frame is valid
-                        try:
-                            if frame.dtype != np.uint8:
-                                frame = frame.astype(np.uint8)
-                            
-                            # Add camera label
-                            cv2.putText(frame, f"cam{i}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-                            frame = cv2.flip(frame, 0)
-                            
-                            # Create texture more efficiently
-                            buffer = frame.tobytes()
-                            texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
-                            texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
-                            
-                            # Update widget texture
-                            if i < len(self.image_widgets):
-                                self.image_widgets[i].texture = texture
-                        except Exception as e:
-                            print(f"Error updating image {i}: {e}")
-                            continue
+            # Get all available frames from the video receiver
+            all_frames = self.videoreceiver.get_all_frames()
+            
+            for i, (camera_index, frame) in enumerate(all_frames.items()):
+                if frame is not None and frame.size > 0:  # Check if frame is valid
+                    try:
+                        if frame.dtype != np.uint8:
+                            frame = frame.astype(np.uint8)
+                        
+                        # Add camera label
+                        cv2.putText(frame, f"cam{camera_index}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                        frame = cv2.flip(frame, 0)
+                        
+                        # Create texture more efficiently
+                        buffer = frame.tobytes()
+                        texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
+                        texture.blit_buffer(buffer, colorfmt='bgr', bufferfmt='ubyte')
+                        
+                        # Update widget texture
+                        if i < len(self.image_widgets):
+                            self.image_widgets[i].texture = texture
+                    except Exception as e:
+                        print(f"Error updating image {camera_index}: {e}")
+                        continue
         except Exception as e:
             print(f"Error in update_image: {e}")
 
