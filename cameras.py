@@ -1,280 +1,113 @@
-#!/usr/bin/env python3
-"""
-TCP Camera Client for Video Reception
-This module handles TCP-based video streaming from camera servers
-"""
+
+
+import subprocess
+from tkinter import Image
+
+# Step 1: List all listening sockets and their processes
+command = "netstat -tulnp"
+try:
+    # Step 2: Execute the command and capture the output
+    result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, text=True)
+    output_lines = result.stdout.splitlines()
+
+    # Step 3: Extract PIDs and kill processes
+    for line in output_lines[2:]:  # Skip the first two header lines
+        fields = line.split()
+        if len(fields) >= 7:
+            proto = fields[0]
+            recvq = fields[1]
+            sendq = fields[2]
+            local_address = fields[3]
+            foreign_address = fields[4]
+            state = fields[5]
+            pid_program = fields[6]
+
+            # Split PID and program name if available
+            if '/' in pid_program:
+                pid, program = pid_program.split('/')
+                pid = pid.strip()
+                program = program.strip()
+                # Kill the process using its PID
+                kill_command = f"kill -9 {pid}"
+                subprocess.run(kill_command, shell=True, check=True)
+                print(f"Killed process {program} with PID {pid}")
+            else:
+                print(f"Skipping line: {line}. PID and program name not found.")
+
+    print("All processes with open sockets killed.")
+except subprocess.CalledProcessError as e:
+    print(f"Error executing command: {e}")
+
+
+
+
 
 import socket
 import cv2
 import numpy as np
 import pickle
 import threading
-import time
 from kivy.event import EventDispatcher
-from kivy.properties import NumericProperty, ObjectProperty
-from kivy.clock import Clock
+
+from kivy.properties import NumericProperty,ObjectProperty
 
 class VideoReceiver(EventDispatcher):
-    """TCP-based video receiver for camera streams"""
-    
     streamchange = NumericProperty(0)
     
-    def __init__(self, server_ip="192.168.1.10", server_port=8000):
+    def __init__(self):
         super(VideoReceiver, self).__init__()
-        self.server_ip = server_ip
-        self.server_port = server_port
+        self.port = 8000
         self.video_frames = {}
-        self.running = True
-        self.connected = False
-        self.connection_lock = threading.Lock()
-        self.last_frame_time = {}
-        self.reconnect_interval = 5.0
-        self.last_reconnect_attempt = 0
+
+        receiver_thread = threading.Thread(target=self.setup_socket)
+        receiver_thread.start()
+
+    def setup_socket(self):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        socket_address = ("0.0.0.0", self.port)
         
-        self.tcp_socket = None
+        try:
+            print(f"Listening at {socket_address}")
+            self.server_socket.bind(socket_address)
+            self.receive_video()
         
-        # Start connection management thread
-        self.connection_thread = threading.Thread(target=self.manage_connection, daemon=True)
-        self.connection_thread.start()
-        
-        # Start cleanup thread
-        self.cleanup_thread = threading.Thread(target=self.cleanup_stale_frames, daemon=True)
-        self.cleanup_thread.start()
-    
-    def manage_connection(self):
-        """Manage TCP connection with automatic reconnection"""
-        while self.running:
-            try:
-                if not self.connected:
-                    current_time = time.time()
-                    if current_time - self.last_reconnect_attempt >= self.reconnect_interval:
-                        self.last_reconnect_attempt = current_time
-                        self.connect_to_server()
-                
-                if self.connected:
-                    # Check connection health
-                    if not self.check_connection_health():
-                        self.disconnect_from_server()
-                    else:
-                        # Receive video data
-                        self.receive_video()
-                
-                time.sleep(0.1)  # Small delay to prevent busy waiting
-                
-            except Exception as e:
-                print(f"Connection management error: {e}")
-                self.disconnect_from_server()
-                time.sleep(1.0)
-    
-    def connect_to_server(self):
-        """Establish TCP connection to camera server"""
-        try:
-            with self.connection_lock:
-                if self.connected:
-                    return True
-                
-                print(f"Connecting to camera server at {self.server_ip}:{self.server_port}")
-                
-                # Create TCP socket
-                self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.tcp_socket.settimeout(5.0)  # 5 second timeout
-                
-                # Connect to server
-                self.tcp_socket.connect((self.server_ip, self.server_port))
-                
-                # Send connection confirmation
-                self.tcp_socket.send(b"CONNECTED")
-                
-                # Set socket options for better performance
-                self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                self.tcp_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
-                self.tcp_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
-                self.tcp_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
-                
-                self.connected = True
-                print(f"Successfully connected to camera server")
-                return True
-                
         except Exception as e:
-            print(f"Failed to connect to camera server: {e}")
-            self.disconnect_from_server()
-            return False
-    
-    def disconnect_from_server(self):
-        """Disconnect from camera server"""
-        try:
-            with self.connection_lock:
-                if self.tcp_socket:
-                    try:
-                        self.tcp_socket.close()
-                    except:
-                        pass
-                    self.tcp_socket = None
-                
-                self.connected = False
-                print("Disconnected from camera server")
-                
-        except Exception as e:
-            print(f"Error during disconnection: {e}")
-    
-    def check_connection_health(self):
-        """Check if TCP connection is still healthy"""
-        try:
-            if not self.tcp_socket or not self.connected:
-                return False
+            print(f"Error binding socket: {e}")
             
-            # Send PING to check connection
-            self.tcp_socket.send(b"PING")
-            
-            # Wait for response (with timeout)
-            self.tcp_socket.settimeout(2.0)
-            try:
-                response = self.tcp_socket.recv(1024)
-                if response == b"PONG":
-                    return True
-            except socket.timeout:
-                pass
-            
-            return False
-            
-        except Exception as e:
-            print(f"Connection health check failed: {e}")
-            return False
-    
     def receive_video(self):
-        """Receive video frames from TCP stream"""
-        try:
-            if not self.tcp_socket or not self.connected:
-                return
-            
-            # Reset timeout for video reception
-            self.tcp_socket.settimeout(1.0)
-            
-            # Read frame size (4 bytes)
-            size_data = self.tcp_socket.recv(4)
-            if len(size_data) != 4:
-                return
-            
-            frame_size = int.from_bytes(size_data, byteorder='big')
-            
-            # Read frame data
-            frame_data = b""
-            while len(frame_data) < frame_size:
-                chunk = self.tcp_socket.recv(min(frame_size - len(frame_data), 4096))
-                if not chunk:
-                    break
-                frame_data += chunk
-            
-            if len(frame_data) == frame_size:
-                self.process_video_frame(frame_data)
-            
-        except socket.timeout:
-            # Timeout is expected during video reception
-            pass
-        except Exception as e:
-            print(f"Error receiving video: {e}")
-            self.disconnect_from_server()
-    
-    def process_video_frame(self, frame_data):
-        """Process received video frame data"""
-        try:
-            # Unpickle the frame data
-            camera_index, encoded_frame = pickle.loads(frame_data)
-            
-            # Decode the frame
-            frame = cv2.imdecode(encoded_frame, cv2.IMREAD_COLOR)
-            
-            if frame is not None:
-                # Store the frame
-                self.video_frames[camera_index] = frame
-                self.last_frame_time[camera_index] = time.time()
-                
-                # Trigger UI update
-                self._trigger_ui_update()
-                
-        except Exception as e:
-            print(f"Error processing video frame: {e}")
-    
-    def _trigger_ui_update(self):
-        """Trigger UI update on main thread"""
-        try:
-            Clock.schedule_once(lambda dt: setattr(self, 'streamchange', self.streamchange + 1), 0)
-        except Exception as e:
-            print(f"Error triggering UI update: {e}")
-    
-    def cleanup_stale_frames(self):
-        """Clean up stale video frames"""
-        while self.running:
+        while True:
             try:
-                current_time = time.time()
-                stale_cameras = []
+                data, addr = self.server_socket.recvfrom(65507)  # Maximum UDP packet size
                 
-                for camera_index, last_time in self.last_frame_time.items():
-                    if current_time - last_time > 5.0:  # 5 second timeout
-                        stale_cameras.append(camera_index)
+                # Deserialize the pickled frame
+                identifier, encoded_frame = pickle.loads(data)
                 
-                for camera_index in stale_cameras:
-                    if camera_index in self.video_frames:
-                        del self.video_frames[camera_index]
-                    if camera_index in self.last_frame_time:
-                        del self.last_frame_time[camera_index]
+                nparr = np.frombuffer(encoded_frame, np.uint8)
                 
-                time.sleep(1.0)  # Check every second
+                # Decode frame using OpenCV
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                # Check if the frame was successfully decoded
+                if frame is None:
+                    print(f"Failed to decode frame, skipping...{addr}")
+                    continue
+                
+                # Update frame in the GUI
+                self.video_frames[identifier] = frame
+
+                self.streamchange = identifier
+
+                # print(f"receiving video: {identifier}")
+                # cv2.imshow(str(identifier),frame)
                 
             except Exception as e:
-                print(f"Error in frame cleanup: {e}")
-                time.sleep(1.0)
+                print(f"Error receiving video: {e}")
+                # break
+        
+        self.server_socket.close()
     
-    def get_latest_frame(self, camera_index=0):
-        """Get the latest frame for a specific camera"""
-        try:
-            return self.video_frames.get(camera_index)
-        except Exception as e:
-            print(f"Error getting latest frame: {e}")
-            return None
-    
-    def get_all_frames(self):
-        """Get all available frames"""
-        try:
-            return self.video_frames.copy()
-        except Exception as e:
-            print(f"Error getting all frames: {e}")
-            return {}
-    
-    def is_connected(self):
-        """Check if connected to server"""
-        return self.connected
-    
-    def get_connection_status(self):
-        """Get detailed connection status"""
-        if self.connected:
-            return "Connected"
+    def getfeedbyid(self, id):
+        if id in self.video_frames:
+            return self.video_frames[id]
         else:
-            return "Disconnected"
-    
-    def set_server_address(self, ip, port):
-        """Set new server address and reconnect"""
-        try:
-            with self.connection_lock:
-                if self.connected:
-                    self.disconnect_from_server()
-                
-                self.server_ip = ip
-                self.server_port = port
-                print(f"Server address updated to {ip}:{port}")
-                
-        except Exception as e:
-            print(f"Error setting server address: {e}")
-    
-    def stop(self):
-        """Stop the video receiver"""
-        try:
-            self.running = False
-            self.disconnect_from_server()
-            print("Video receiver stopped")
-        except Exception as e:
-            print(f"Error stopping video receiver: {e}")
-    
-    def is_running(self):
-        """Check if receiver is running"""
-        return self.running
+            return None
