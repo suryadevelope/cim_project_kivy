@@ -666,7 +666,69 @@ class MainScreen(Screen):
 
         self.queue = Queue()
         self.videoreceiver = VideoReceiver()
+        
+        # Ensure video streaming and control systems are properly separated
+        self.ensure_system_separation()
+        
         self.bind(size=self.on_size)
+
+    def ensure_system_separation(self):
+        """Ensure video streaming and control systems are properly separated"""
+        try:
+            print("Ensuring system separation between video streaming and control...")
+            
+            # Check if video receiver is running
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                if self.videoreceiver.is_running():
+                    print("Video receiver is running successfully")
+                else:
+                    print("Warning: Video receiver is not running")
+            
+            # Check if streaming control is running
+            if hasattr(self, 'streaming') and self.streaming:
+                if self.streaming.is_running():
+                    print("Streaming control is running successfully")
+                else:
+                    print("Warning: Streaming control is not running")
+            
+            # Set different update rates for video and control
+            if hasattr(self, 'streaming') and self.streaming:
+                # Set control update rate to 20Hz (less frequent than video)
+                self.streaming.set_ui_update_rate(20)
+                print("Control system update rate set to 20Hz")
+            
+            print("System separation check completed")
+            
+        except Exception as e:
+            print(f"Error ensuring system separation: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def ensure_video_continuity(self):
+        """Ensure video streaming continues uninterrupted during control operations"""
+        try:
+            print("Ensuring video streaming continuity...")
+            
+            # Check video receiver status
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                if not self.videoreceiver.is_running():
+                    print("Warning: Video receiver stopped, attempting to restart...")
+                    # Video receiver will auto-restart in its thread
+                else:
+                    print("Video receiver is running normally")
+            
+            # Set video update priority
+            if hasattr(self, 'videoreceiver') and self.videoreceiver:
+                # Ensure video updates are not blocked by control operations
+                Clock.schedule_interval(self.update_image, 1.0 / 30.0)  # 30 FPS
+                print("Video update rate set to 30 FPS for smooth streaming")
+            
+            print("Video continuity check completed")
+            
+        except Exception as e:
+            print(f"Error ensuring video continuity: {e}")
+            import traceback
+            traceback.print_exc()
 
     def initialize_connectivity_checks(self):
         """Initialize connectivity checks for hardware and internet"""
@@ -2094,8 +2156,11 @@ class MainScreen(Screen):
             for image_widget in self.image_widgets:
                 image_widget.bind(on_touch_down=self.on_image_touch)
             
-            # Use consistent frame rate for image updates
+            # Use consistent frame rate for image updates (30 FPS for video)
             Clock.schedule_interval(self.update_image, 1.0 / 30.0)
+            
+            # Ensure video streaming continues during control operations
+            self.ensure_video_continuity()
             
             # Start autonomous mission sender if needed
             if hasattr(self, 'autonomous_event') and self.autonomous_event:

@@ -26,7 +26,10 @@ except ImportError:
 Stream_2_IP = "192.168.1.10"
 Stream_2_PORT = 5005
 LISTEN_IP = "0.0.0.0"  # Listen on all interfaces
-LISTEN_PORT = 5006
+LISTEN_PORT = 5006  # Control data port (different from video port 8000)
+
+# Video streaming port (separate from control)
+VIDEO_PORT = 8000
 
 print("main.py started")
 
@@ -53,7 +56,7 @@ def close_port_if_running(port):
     except Exception as e:
         print(f"Error closing port {port}: {e}")
 
-# Port management
+# Port management - only check control port, not video port
 port_status = is_port_in_use(LISTEN_PORT)
 if port_status is None:
     print(f"An error occurred while checking port {LISTEN_PORT}.")
@@ -110,13 +113,18 @@ class Stream(EventDispatcher):
     _data_buffer = deque(maxlen=10)  # Buffer for data updates
     _joystick_buffer = deque(maxlen=5)  # Buffer for joystick updates
     
+    # Thread management
+    _joystick_running = False
+    _listener_running = False
+    
     def __init__(self, **kwargs):
-        super(Stream, self).__init__(**kwargs)
+        super(Stream, self).__init__()
         
         # Initialize Firebase control if available
         if FIREBASE_AVAILABLE:
             try:
                 from firebase_config import FIREBASE_CONFIG
+                from firebase_control import FirebaseControl
                 self.firebase_control = FirebaseControl(FIREBASE_CONFIG)
                 print("Firebase control initialized in Stream")
             except Exception as e:
@@ -124,11 +132,13 @@ class Stream(EventDispatcher):
                 self.firebase_control = None
         
         # Start UDP listener thread
+        self._listener_running = True
         self.listener_thread = Thread(target=self.listen_udp, daemon=True)
         self.listener_thread.start()
         
         # Start joystick thread if in hardware mode
         if self.control_mode == "hardware":
+            self._joystick_running = True
             self.joystick_thread = Thread(target=self.runjoystick, daemon=True)
             self.joystick_thread.start()
         
@@ -164,8 +174,19 @@ class Stream(EventDispatcher):
     def set_control_mode(self, mode):
         """Set control mode (hardware or internet)"""
         with self.data_lock:
+            old_mode = self.control_mode
             self.control_mode = mode
-            print(f"Stream control mode set to: {mode}")
+            print(f"Stream control mode changed from {old_mode} to: {mode}")
+            
+            # Start/stop joystick thread based on mode
+            if mode == "hardware" and not self._joystick_running:
+                self._joystick_running = True
+                self.joystick_thread = Thread(target=self.runjoystick, daemon=True)
+                self.joystick_thread.start()
+                print("Started hardware joystick thread")
+            elif mode == "internet" and self._joystick_running:
+                self._joystick_running = False
+                print("Stopped hardware joystick thread")
             
             # Update Firebase control mode if available
             if self.firebase_control:
@@ -261,7 +282,7 @@ class Stream(EventDispatcher):
             last_update = 0
             update_interval = 0.05  # 20Hz update rate for joystick (reduced from 50Hz)
             
-            while True:
+            while self._joystick_running:
                 pygame.event.pump()
                 
                 current_time = time.time()
@@ -347,7 +368,7 @@ class Stream(EventDispatcher):
         """Listen for UDP data from rover with improved error handling"""
         print("Starting UDP listener thread...")
         
-        while True:
+        while self._listener_running:
             try:
                 data, addr = Listen_socket.recvfrom(1024)
                 if not data:
@@ -502,3 +523,18 @@ class Stream(EventDispatcher):
     def get_ui_update_rate(self):
         """Get current UI update rate in FPS"""
         return int(1.0 / self._ui_update_interval) if self._ui_update_interval > 0 else 0
+
+    def stop(self):
+        """Stop all threads gracefully"""
+        print("Stopping Stream threads...")
+        self._joystick_running = False
+        self._listener_running = False
+        
+        # Wait a bit for threads to finish
+        time.sleep(0.1)
+        
+        print("Stream threads stopped")
+
+    def is_running(self):
+        """Check if Stream is running"""
+        return self._joystick_running or self._listener_running
