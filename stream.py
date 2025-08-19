@@ -177,7 +177,7 @@ class Stream(EventDispatcher):
             return self.control_mode
 
     def send_joystick_to_firebase(self, udp_command_string):
-        """Send joystick data to Firebase in the same format as socket"""
+        """Send joystick data to Firebase ONLY if in internet mode"""
         if self.firebase_control and self.control_mode == "internet":  # type: ignore
             try:
                 # Send the UDP command string directly to Firebase (same as socket)
@@ -186,9 +186,53 @@ class Stream(EventDispatcher):
                     "timestamp": time.time()
                 }
                 self.firebase_control.send_joystick_data(joystick_data)  # type: ignore
-                print(f"Sent joystick data to Firebase: {joystick_data}")
+                print(f"✅ Sent joystick data to Firebase (internet mode): {joystick_data}")
             except Exception as e:
-                print(f"Error sending joystick data to Firebase: {e}")
+                print(f"❌ Error sending joystick data to Firebase: {e}")
+        else:
+            if self.control_mode == "hardware":
+                print(f"ℹ️ Skipping Firebase send: Currently in hardware mode, using socket communication")
+            elif not self.firebase_control:
+                print(f"ℹ️ Skipping Firebase send: Firebase control not available")
+
+    def send_joystick_via_socket(self, udp_command_string):
+        """Send joystick data via socket ONLY if in hardware mode"""
+        if self.control_mode == "hardware":
+            try:
+                # Send via UDP socket
+                self.send_udp_packet(Stream2_socket, udp_command_string, Stream_2_IP, Stream_2_PORT)
+                print(f"✅ Sent joystick data via socket (hardware mode): {udp_command_string}")
+                return True
+            except Exception as e:
+                print(f"❌ Error sending joystick data via socket: {e}")
+                return False
+        else:
+            print(f"ℹ️ Skipping socket send: Currently in internet mode, using Firebase communication")
+            return False
+
+    def send_joystick_data(self, udp_command_string):
+        """
+        Send joystick data based on current control mode
+        
+        Args:
+            udp_command_string (str): UDP command string to send
+            
+        Returns:
+            bool: True if data was sent successfully, False otherwise
+        """
+        try:
+            if self.control_mode == "hardware":
+                # Hardware mode: send via socket only
+                return self.send_joystick_via_socket(udp_command_string)
+            elif self.control_mode == "internet":
+                # Internet mode: send via Firebase only
+                return self.send_joystick_to_firebase(udp_command_string) is not None
+            else:
+                print(f"❌ Unknown control mode: {self.control_mode}")
+                return False
+        except Exception as e:
+            print(f"❌ Error in send_joystick_data: {e}")
+            return False
 
     def parse_udp_command(self, udp_command):
         """Parse UDP command string to joystick data"""
@@ -329,12 +373,8 @@ class Stream(EventDispatcher):
                 # Format the command string
                 data = "@{},{},{},{},{}".format(speed, direction, holdobject, centerliftknob, lift_speed)
                 
-                # Send via UDP
-                self.send_udp_packet(Stream2_socket, data, Stream_2_IP, Stream_2_PORT)
-                
-                # Send to Firebase if in internet mode
-                if self.control_mode == "internet":
-                    self.send_joystick_to_firebase(data)
+                # Send data based on current control mode
+                self.send_joystick_data(data)
                 
                 last_update = current_time
                 
@@ -502,3 +542,53 @@ class Stream(EventDispatcher):
     def get_ui_update_rate(self):
         """Get current UI update rate in FPS"""
         return int(1.0 / self._ui_update_interval) if self._ui_update_interval > 0 else 0
+
+    def sync_control_mode_from_firebase(self):
+        """
+        Synchronize local control mode with Firebase system status
+        This ensures mode changes in Firebase are immediately reflected locally
+        """
+        try:
+            if not self.firebase_control:
+                print("ℹ️ Cannot sync mode: Firebase control not available")
+                return False
+            
+            # Use the Firebase control's sync method
+            if hasattr(self.firebase_control, 'sync_mode_from_firebase'):
+                success = self.firebase_control.sync_mode_from_firebase()
+                if success:
+                    # Update local mode to match Firebase
+                    new_mode = self.firebase_control.get_control_mode()
+                    if new_mode != self.control_mode:
+                        print(f"🔄 Mode synchronized from Firebase: {self.control_mode} -> {new_mode}")
+                        self.control_mode = new_mode
+                        return True
+                return success
+            else:
+                print("ℹ️ Firebase control doesn't have sync_mode_from_firebase method")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error syncing control mode from Firebase: {e}")
+            return False
+
+    def get_control_mode_status(self):
+        """
+        Get detailed control mode status for debugging
+        """
+        try:
+            status = {
+                "local_mode": self.control_mode,
+                "firebase_available": self.firebase_control is not None,
+                "firebase_mode": None,
+                "firebase_connected": False
+            }
+            
+            if self.firebase_control:
+                status["firebase_mode"] = self.firebase_control.get_control_mode()
+                status["firebase_connected"] = self.firebase_control.is_firebase_connected()
+            
+            return status
+        except Exception as e:
+            print(f"❌ Error getting control mode status: {e}")
+            return {"error": str(e)}

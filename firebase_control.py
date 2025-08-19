@@ -677,24 +677,21 @@ class FirebaseControl:
     def send_joystick_data(self, joystick_data):
         """Send joystick data to Firebase with enhanced validation"""
         try:
-            if self.control_mode == "internet" and self.is_connected:
-                # Validate the joystick data before sending
-                if self.validate_joystick_data(joystick_data):
-                    joystick_path = FIREBASE_PATHS["joystick"].split("/")
-                    self.db.child(*joystick_path).set(joystick_data)
-                    print(f"Sent joystick data to Firebase: {joystick_data}")
-                    return True
-                else:
-                    print(f"Invalid joystick data, not sending: {joystick_data}")
-                    return False
+            # Check if data should be sent based on current mode
+            if not self.should_send_data("joystick"):
+                return False
+            
+            # Validate the joystick data before sending
+            if self.validate_joystick_data(joystick_data):
+                joystick_path = FIREBASE_PATHS["joystick"].split("/")
+                self.db.child(*joystick_path).set(joystick_data)
+                print(f"✅ Sent joystick data to Firebase: {joystick_data}")
+                return True
             else:
-                if self.control_mode != "internet":
-                    print(f"Not in internet mode (current mode: {self.control_mode})")
-                elif not self.is_connected:
-                    print("Firebase not connected")
+                print(f"❌ Invalid joystick data, not sending: {joystick_data}")
                 return False
         except Exception as e:
-            print(f"Error sending joystick data: {e}")
+            print(f"❌ Error sending joystick data: {e}")
             self.is_connected = False
             # Try to reconnect
             try:
@@ -706,24 +703,21 @@ class FirebaseControl:
     def send_autonomous_command(self, command_data):
         """Send autonomous command to Firebase with enhanced validation"""
         try:
-            if self.control_mode == "internet" and self.is_connected:
-                # Validate the command data before sending
-                if self.validate_autonomous_data(command_data):
-                    autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
-                    self.db.child(*autonomous_path).set(command_data)
-                    print(f"Sent autonomous command to Firebase: {command_data}")
-                    return True
-                else:
-                    print(f"Invalid autonomous command data, not sending: {command_data}")
-                    return False
+            # Check if data should be sent based on current mode
+            if not self.should_send_data("autonomous"):
+                return False
+            
+            # Validate the command data before sending
+            if self.validate_autonomous_data(command_data):
+                autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                self.db.child(*autonomous_path).set(command_data)
+                print(f"✅ Sent autonomous command to Firebase: {command_data}")
+                return True
             else:
-                if self.control_mode != "internet":
-                    print(f"Not in internet mode (current mode: {self.control_mode})")
-                elif not self.is_connected:
-                    print("Firebase not connected")
+                print(f"❌ Invalid autonomous command data, not sending: {command_data}")
                 return False
         except Exception as e:
-            print(f"Error sending autonomous command: {e}")
+            print(f"❌ Error sending autonomous command: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -759,67 +753,64 @@ class FirebaseControl:
                 print("❌ Cannot send mission: Firebase connection not available")
                 return False
             
-            if self.control_mode == "internet" and self.is_connected:
-                print("✅ Conditions met for Firebase upload - proceeding with validation")
-                # Validate the mission data structure
-                if isinstance(mission_data, dict) and "mission" in mission_data and "status" in mission_data:
-                    print("✅ Mission data structure is valid")
-                    # Validate mission points
-                    mission_points = mission_data.get("mission", [])
-                    if isinstance(mission_points, list):
-                        print(f"✅ Mission points is a list with {len(mission_points)} points")
-                        # Validate each mission point
-                        valid_points = []
-                        for i, point in enumerate(mission_points):
-                            if isinstance(point, (list, tuple)) and len(point) >= 2:
-                                # Ensure coordinates are numeric
-                                try:
-                                    lat = float(point[0])
-                                    lon = float(point[1])
-                                    valid_points.append([lat, lon])
-                                    print(f"✅ Validated point {i}: [{lat}, {lon}]")
-                                except (ValueError, TypeError):
-                                    print(f"❌ Invalid mission point coordinates: {point}")
-                                    continue
-                        
-                        if valid_points:
-                            # Create validated mission data
-                            validated_mission_data = {
-                                "mission": valid_points,
-                                "status": mission_data.get("status", "stop"),
-                                "timestamp": time.time(),
-                                "mission_count": len(valid_points)
-                            }
-                            
-                            print(f"✅ Validated mission data: {validated_mission_data}")
-                            
-                            # Send to Firebase
-                            autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
-                            print(f"📤 Sending to Firebase path: {autonomous_path}")
-                            
+            # Check if data should be sent based on current mode
+            if not self.should_send_data("mission"):
+                return False
+            
+            print("✅ Conditions met for Firebase upload - proceeding with validation")
+            # Validate the mission data structure
+            if isinstance(mission_data, dict) and "mission" in mission_data and "status" in mission_data:
+                print("✅ Mission data structure is valid")
+                # Validate mission points
+                mission_points = mission_data.get("mission", [])
+                if isinstance(mission_points, list):
+                    print(f"✅ Mission points is a list with {len(mission_points)} points")
+                    # Validate each mission point
+                    valid_points = []
+                    for i, point in enumerate(mission_points):
+                        if isinstance(point, (list, tuple)) and len(point) >= 2:
+                            # Ensure coordinates are numeric
                             try:
-                                self.db.child(*autonomous_path).set(validated_mission_data)
-                                print(f"✅ Successfully sent autonomous mission to Firebase: {validated_mission_data}")
-                                return True
-                            except Exception as firebase_error:
-                                print(f"❌ Firebase write error: {firebase_error}")
-                                import traceback
-                                traceback.print_exc()
-                                return False
-                        else:
-                            print("❌ No valid mission points found")
+                                lat = float(point[0])
+                                lon = float(point[1])
+                                valid_points.append([lat, lon])
+                                print(f"✅ Validated point {i}: [{lat}, {lon}]")
+                            except (ValueError, TypeError):
+                                print(f"❌ Invalid mission point coordinates: {point}")
+                                continue
+                    
+                    if valid_points:
+                        # Create validated mission data
+                        validated_mission_data = {
+                            "mission": valid_points,
+                            "status": mission_data.get("status", "stop"),
+                            "timestamp": time.time(),
+                            "mission_count": len(valid_points)
+                        }
+                        
+                        print(f"✅ Validated mission data: {validated_mission_data}")
+                        
+                        # Send to Firebase
+                        autonomous_path = FIREBASE_PATHS["autonomous"].split("/")
+                        print(f"📤 Sending to Firebase path: {autonomous_path}")
+                        
+                        try:
+                            self.db.child(*autonomous_path).set(validated_mission_data)
+                            print(f"✅ Successfully sent autonomous mission to Firebase: {validated_mission_data}")
+                            return True
+                        except Exception as firebase_error:
+                            print(f"❌ Firebase write error: {firebase_error}")
+                            import traceback
+                            traceback.print_exc()
                             return False
                     else:
-                        print(f"❌ Invalid mission points format: {mission_points}")
+                        print("❌ No valid mission points found")
                         return False
                 else:
-                    print(f"❌ Invalid mission data structure: {mission_data}")
+                    print(f"❌ Invalid mission points format: {mission_points}")
                     return False
             else:
-                if self.control_mode != "internet":
-                    print(f"❌ Not in internet mode (current mode: {self.control_mode})")
-                elif not self.is_connected:
-                    print("❌ Firebase not connected")
+                print(f"❌ Invalid mission data structure: {mission_data}")
                 return False
         except Exception as e:
             print(f"❌ Error sending autonomous mission: {e}")
@@ -881,24 +872,21 @@ class FirebaseControl:
     def send_mission_commands(self, mission_data):
         """Send mission commands to Firebase with validation"""
         try:
-            if self.control_mode == "internet" and self.is_connected:
-                # Validate the mission data before sending
-                if self.validate_mission_data(mission_data):
-                    mission_path = FIREBASE_PATHS["mission_commands"].split("/")
-                    self.db.child(*mission_path).set(mission_data)
-                    print(f"Sent mission commands to Firebase: {mission_data}")
-                    return True
-                else:
-                    print(f"Invalid mission commands data, not sending: {mission_data}")
-                    return False
+            # Check if data should be sent based on current mode
+            if not self.should_send_data("mission"):
+                return False
+            
+            # Validate the mission data before sending
+            if self.validate_mission_data(mission_data):
+                mission_path = FIREBASE_PATHS["mission_commands"].split("/")
+                self.db.child(*mission_path).set(mission_data)
+                print(f"✅ Sent mission commands to Firebase: {mission_data}")
+                return True
             else:
-                if self.control_mode != "internet":
-                    print(f"Not in internet mode (current mode: {self.control_mode})")
-                elif not self.is_connected:
-                    print("Firebase not connected")
+                print(f"❌ Invalid mission commands data, not sending: {mission_data}")
                 return False
         except Exception as e:
-            print(f"Error sending mission commands: {e}")
+            print(f"❌ Error sending mission commands: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -906,24 +894,83 @@ class FirebaseControl:
     def send_navigation_status(self, nav_data):
         """Send navigation status to Firebase with validation"""
         try:
-            if self.control_mode == "internet" and self.is_connected:
-                # Validate the navigation data before sending
-                if self.validate_navigation_data(nav_data):
-                    nav_path = FIREBASE_PATHS["navigation_status"].split("/")
-                    self.db.child(*nav_path).set(nav_data)
-                    print(f"Sent navigation status to Firebase: {nav_data}")
-                    return True
-                else:
-                    print(f"Invalid navigation status data, not sending: {nav_data}")
-                    return False
+            # Check if data should be sent based on current mode
+            if not self.should_send_data("navigation"):
+                return False
+            
+            # Validate the navigation data before sending
+            if self.validate_navigation_data(nav_data):
+                nav_path = FIREBASE_PATHS["navigation_status"].split("/")
+                self.db.child(*nav_path).set(nav_data)
+                print(f"✅ Sent navigation status to Firebase: {nav_data}")
+                return True
             else:
-                if self.control_mode != "internet":
-                    print(f"Not in internet mode (current mode: {self.control_mode})")
-                elif not self.is_connected:
-                    print("Firebase not connected")
+                print(f"❌ Invalid navigation status data, not sending: {nav_data}")
                 return False
         except Exception as e:
-            print(f"Error sending navigation status: {e}")
+            print(f"❌ Error sending navigation status: {e}")
             import traceback
             traceback.print_exc()
+            return False 
+
+    def should_send_data(self, data_type="joystick"):
+        """
+        Check if data should be sent based on current control mode
+        
+        Args:
+            data_type (str): Type of data being sent ("joystick", "autonomous", "mission", "navigation")
+            
+        Returns:
+            bool: True if data should be sent, False otherwise
+        """
+        try:
+            if self.control_mode == "internet":
+                # In internet mode, only send to Firebase if connected
+                if not self.is_connected:
+                    print(f"❌ Cannot send {data_type} data: Firebase not connected")
+                    return False
+                print(f"✅ Sending {data_type} data via Firebase (internet mode)")
+                return True
+            elif self.control_mode == "hardware":
+                # In hardware mode, do NOT send to Firebase
+                print(f"❌ Cannot send {data_type} data: Currently in hardware mode, use socket communication")
+                return False
+            else:
+                print(f"❌ Unknown control mode: {self.control_mode}")
+                return False
+        except Exception as e:
+            print(f"❌ Error checking if data should be sent: {e}")
+            return False
+
+    def sync_mode_from_firebase(self):
+        """
+        Synchronize local control mode with Firebase system status
+        This ensures mode changes in Firebase are immediately reflected locally
+        """
+        try:
+            if not self.is_connected:
+                print("❌ Cannot sync mode: Firebase not connected")
+                return False
+            
+            # Get current mode from Firebase
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            firebase_system_status = self.db.child(*system_path).get()
+            
+            if firebase_system_status.val():
+                firebase_mode = firebase_system_status.val().get("control_mode", "hardware")
+                
+                if firebase_mode != self.control_mode:
+                    print(f"🔄 Mode change detected: Firebase has '{firebase_mode}', local is '{self.control_mode}'")
+                    self.set_control_mode(firebase_mode)
+                    print(f"✅ Mode synchronized to: {firebase_mode}")
+                    return True
+                else:
+                    print(f"✅ Mode already synchronized: {firebase_mode}")
+                    return True
+            else:
+                print("⚠️ No Firebase system status found, keeping current mode")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error syncing mode from Firebase: {e}")
             return False 

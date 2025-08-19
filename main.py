@@ -440,6 +440,10 @@ class MainScreen(Screen):
                     # Check Firebase mode at startup after successful connection
                     print("Checking Firebase mode at startup...")
                     self.check_firebase_mode_at_startup()
+                    
+                    # Start periodic mode synchronization
+                    print("Starting periodic mode synchronization...")
+                    self.start_periodic_mode_sync()
                 else:
                     print("Firebase connection test failed")
                     self.autonomous_data_exchange["firebase_connected"] = False
@@ -840,17 +844,14 @@ class MainScreen(Screen):
             if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
                 return
             
-            # Get current Firebase system status
-            system_path = FIREBASE_PATHS["system_status"].split("/")
-            firebase_system_status = self.firebase_control.db.child(*system_path).get()
-            
-            if firebase_system_status.val():
-                firebase_mode = firebase_system_status.val().get("control_mode", "hardware")
-                
-                # Check if mode has changed
-                if firebase_mode != self.control_mode:
+            # Use the new sync method from Firebase control
+            if hasattr(self.firebase_control, 'sync_mode_from_firebase'):
+                mode_changed = self.firebase_control.sync_mode_from_firebase()
+                if mode_changed:
+                    # Get the new mode from Firebase control
+                    firebase_mode = self.firebase_control.get_control_mode()
                     print(f"=== FIREBASE MODE CHANGE DETECTED ===")
-                    print(f"Firebase mode: {firebase_mode}, Current mode: {self.control_mode}")
+                    print(f"Firebase mode: {firebase_mode}, Previous mode: {self.control_mode}")
                     
                     # Implement the new mode
                     if firebase_mode == "internet":
@@ -2850,6 +2851,35 @@ class MainScreen(Screen):
             print(f"Error testing control functionality: {e}")
             import traceback
             traceback.print_exc()
+
+    def start_periodic_mode_sync(self):
+        """Start periodic mode synchronization with Firebase"""
+        try:
+            print("Starting periodic mode synchronization...")
+            
+            def sync_mode_periodically(dt):
+                try:
+                    if self.firebase_control and self.autonomous_data_exchange["firebase_connected"]:
+                        # Check for mode changes every 3 seconds
+                        self.monitor_firebase_mode_changes()
+                except Exception as e:
+                    print(f"Error in periodic mode sync: {e}")
+            
+            # Schedule mode sync every 3 seconds
+            self.mode_sync_event = Clock.schedule_interval(sync_mode_periodically, 3.0)
+            print("✅ Periodic mode synchronization started (every 3 seconds)")
+            
+        except Exception as e:
+            print(f"Error starting periodic mode sync: {e}")
+
+    def stop_periodic_mode_sync(self):
+        """Stop periodic mode synchronization"""
+        try:
+            if hasattr(self, 'mode_sync_event') and self.mode_sync_event:
+                self.mode_sync_event.cancel()
+                print("✅ Periodic mode synchronization stopped")
+        except Exception as e:
+            print(f"Error stopping periodic mode sync: {e}")
 
 
 # --- Map Plotting Screen ---
