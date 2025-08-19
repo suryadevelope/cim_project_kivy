@@ -436,6 +436,10 @@ class MainScreen(Screen):
                 if self.firebase_control.test_connection():
                     print("Firebase connection test successful")
                     self.autonomous_data_exchange["firebase_connected"] = True
+                    
+                    # Check Firebase mode at startup after successful connection
+                    print("Checking Firebase mode at startup...")
+                    self.check_firebase_mode_at_startup()
                 else:
                     print("Firebase connection test failed")
                     self.autonomous_data_exchange["firebase_connected"] = False
@@ -685,6 +689,10 @@ class MainScreen(Screen):
             print(f"Internet connected: {self.autonomous_data_exchange['internet_connected']}")
             print(f"Firebase connected: {self.autonomous_data_exchange['firebase_connected']}")
             
+            # Check Firebase mode at startup if available
+            if self.firebase_control and self.autonomous_data_exchange["firebase_connected"]:
+                self.check_firebase_mode_at_startup()
+            
             # Start periodic connectivity checks
             self.start_periodic_connectivity_checks()
             
@@ -692,6 +700,265 @@ class MainScreen(Screen):
             print(f"Error initializing connectivity checks: {e}")
             import traceback
             traceback.print_exc()
+
+    def check_firebase_mode_at_startup(self):
+        """Check the control mode from Firebase at startup and implement it"""
+        try:
+            print("=== CHECKING FIREBASE MODE AT STARTUP ===")
+            
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                print("Firebase not available or not connected, skipping mode check")
+                return
+            
+            # Get the current mode from Firebase system status
+            try:
+                system_path = FIREBASE_PATHS["system_status"].split("/")
+                firebase_system_status = self.firebase_control.db.child(*system_path).get()
+                
+                if firebase_system_status.val():
+                    firebase_mode = firebase_system_status.val().get("control_mode", "hardware")
+                    print(f"Firebase system status found: control_mode = {firebase_mode}")
+                    
+                    # Check if the mode is different from current
+                    if firebase_mode != self.control_mode:
+                        print(f"Mode change detected: Firebase has '{firebase_mode}', current is '{self.control_mode}'")
+                        
+                        # Implement the mode from Firebase
+                        if firebase_mode == "internet":
+                            if self.autonomous_data_exchange["internet_connected"]:
+                                print("Implementing internet mode from Firebase")
+                                self.implement_internet_mode()
+                            else:
+                                print("Firebase requests internet mode but no internet connection, staying in hardware mode")
+                        elif firebase_mode == "hardware":
+                            print("Implementing hardware mode from Firebase")
+                            self.implement_hardware_mode()
+                        else:
+                            print(f"Unknown mode from Firebase: {firebase_mode}, defaulting to hardware")
+                            self.control_mode = "hardware"
+                    else:
+                        print(f"Mode already synchronized: Firebase and local both have '{firebase_mode}'")
+                        
+                        # Ensure Firebase control mode is synchronized
+                        if self.firebase_control.get_control_mode() != firebase_mode:
+                            print("Synchronizing Firebase control mode")
+                            self.firebase_control.set_control_mode(firebase_mode)
+                else:
+                    print("No Firebase system status found, defaulting to hardware mode")
+                    self.control_mode = "hardware"
+                    
+            except Exception as e:
+                print(f"Error reading Firebase system status: {e}")
+                print("Defaulting to hardware mode")
+                self.control_mode = "hardware"
+            
+            # Update the control mode button to reflect the current mode
+            self.update_control_mode_button()
+            
+            print(f"=== STARTUP MODE CHECK COMPLETE: Current mode = {self.control_mode} ===")
+            
+        except Exception as e:
+            print(f"Error checking Firebase mode at startup: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def implement_internet_mode(self):
+        """Implement internet mode from Firebase"""
+        try:
+            print("=== IMPLEMENTING INTERNET MODE ===")
+            
+            # Set local control mode
+            self.control_mode = "internet"
+            
+            # Set Firebase control mode
+            if self.firebase_control:
+                self.firebase_control.set_control_mode("internet")
+                print(f"Firebase control mode set to: {self.firebase_control.get_control_mode()}")
+            
+            # Update autonomous data exchange
+            self.autonomous_data_exchange["autonomous_mode"] = "internet"
+            
+            # Update data sync status
+            self.update_data_sync_status()
+            
+            # Update GUI
+            self.update_control_mode_button()
+            
+            print("=== INTERNET MODE IMPLEMENTED SUCCESSFULLY ===")
+            
+        except Exception as e:
+            print(f"Error implementing internet mode: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def implement_hardware_mode(self):
+        """Implement hardware mode from Firebase"""
+        try:
+            print("=== IMPLEMENTING HARDWARE MODE ===")
+            
+            # Set local control mode
+            self.control_mode = "hardware"
+            
+            # Set Firebase control mode
+            if self.firebase_control:
+                self.firebase_control.set_control_mode("hardware")
+                print(f"Firebase control mode set to: {self.firebase_control.get_control_mode()}")
+            
+            # Update autonomous data exchange
+            self.autonomous_data_exchange["autonomous_mode"] = "manual"
+            
+            # Update data sync status
+            self.update_data_sync_status()
+            
+            # Update GUI
+            self.update_control_mode_button()
+            
+            print("=== HARDWARE MODE IMPLEMENTED SUCCESSFULLY ===")
+            
+        except Exception as e:
+            print(f"Error implementing hardware mode: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def update_control_mode_button(self):
+        """Update the control mode button to reflect the current mode"""
+        try:
+            if hasattr(self, 'control_mode_btn'):
+                if self.control_mode == "internet":
+                    self.control_mode_btn.text = "Internet"
+                    self.control_mode_btn.background_color = (0.2, 0.2, 0.8, 1)  # Blue for internet
+                else:
+                    self.control_mode_btn.text = "Hardware"
+                    self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)  # Green for hardware
+                print(f"Control mode button updated to: {self.control_mode}")
+        except Exception as e:
+            print(f"Error updating control mode button: {e}")
+
+    def monitor_firebase_mode_changes(self):
+        """Monitor Firebase for mode changes and implement them"""
+        try:
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                return
+            
+            # Get current Firebase system status
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            firebase_system_status = self.firebase_control.db.child(*system_path).get()
+            
+            if firebase_system_status.val():
+                firebase_mode = firebase_system_status.val().get("control_mode", "hardware")
+                
+                # Check if mode has changed
+                if firebase_mode != self.control_mode:
+                    print(f"=== FIREBASE MODE CHANGE DETECTED ===")
+                    print(f"Firebase mode: {firebase_mode}, Current mode: {self.control_mode}")
+                    
+                    # Implement the new mode
+                    if firebase_mode == "internet":
+                        if self.autonomous_data_exchange["internet_connected"]:
+                            print("Implementing internet mode change from Firebase")
+                            self.implement_internet_mode()
+                        else:
+                            print("Firebase requests internet mode but no internet connection, staying in hardware mode")
+                            self.handle_mode_sync_error("internet", "no_internet_connection")
+                    elif firebase_mode == "hardware":
+                        print("Implementing hardware mode change from Firebase")
+                        self.implement_hardware_mode()
+                    else:
+                        print(f"Unknown mode from Firebase: {firebase_mode}, ignoring change")
+                        self.handle_mode_sync_error("unknown", f"unknown_mode_{firebase_mode}")
+                        
+        except Exception as e:
+            print(f"Error monitoring Firebase mode changes: {e}")
+            self.handle_mode_sync_error("monitoring", str(e))
+
+    def handle_mode_sync_error(self, error_type, error_details):
+        """Handle mode synchronization errors and log them"""
+        try:
+            error_message = f"Mode sync error: {error_type} - {error_details}"
+            print(f"=== MODE SYNCHRONIZATION ERROR ===")
+            print(error_message)
+            
+            # Log the error for debugging
+            timestamp = datetime.now().isoformat()
+            error_log = {
+                "timestamp": timestamp,
+                "error_type": error_type,
+                "error_details": error_details,
+                "current_mode": self.control_mode,
+                "firebase_connected": self.autonomous_data_exchange["firebase_connected"],
+                "internet_connected": self.autonomous_data_exchange["internet_connected"]
+            }
+            
+            print(f"Error logged: {error_log}")
+            
+            # Try to update Firebase with error status if possible
+            if self.firebase_control and self.autonomous_data_exchange["firebase_connected"]:
+                try:
+                    error_status = {
+                        "control_mode": self.control_mode,
+                        "firebase_connected": self.autonomous_data_exchange["firebase_connected"],
+                        "last_heartbeat": time.time(),
+                        "online": True,
+                        "timestamp": timestamp,
+                        "last_error": error_log
+                    }
+                    system_path = FIREBASE_PATHS["system_status"].split("/")
+                    self.firebase_control.db.child(*system_path).set(error_status)
+                    print("Error status sent to Firebase")
+                except Exception as firebase_error:
+                    print(f"Failed to send error status to Firebase: {firebase_error}")
+            
+        except Exception as e:
+            print(f"Error handling mode sync error: {e}")
+
+    def ensure_mode_synchronization(self):
+        """Ensure the local mode is synchronized with Firebase"""
+        try:
+            print("=== ENSURING MODE SYNCHRONIZATION ===")
+            
+            if not self.firebase_control or not self.autonomous_data_exchange["firebase_connected"]:
+                print("Firebase not available, cannot synchronize mode")
+                return False
+            
+            # Get current Firebase mode
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            firebase_system_status = self.firebase_control.db.child(*system_path).get()
+            
+            if firebase_system_status.val():
+                firebase_mode = firebase_system_status.val().get("control_mode", "hardware")
+                print(f"Firebase mode: {firebase_mode}, Local mode: {self.control_mode}")
+                
+                if firebase_mode != self.control_mode:
+                    print("Mode mismatch detected, synchronizing...")
+                    
+                    # Implement the Firebase mode
+                    if firebase_mode == "internet":
+                        if self.autonomous_data_exchange["internet_connected"]:
+                            self.implement_internet_mode()
+                            print("Mode synchronized to internet")
+                            return True
+                        else:
+                            print("Cannot sync to internet mode: no internet connection")
+                            return False
+                    elif firebase_mode == "hardware":
+                        self.implement_hardware_mode()
+                        print("Mode synchronized to hardware")
+                        return True
+                    else:
+                        print(f"Unknown Firebase mode: {firebase_mode}")
+                        return False
+                else:
+                    print("Modes already synchronized")
+                    return True
+            else:
+                print("No Firebase system status found")
+                return False
+                
+        except Exception as e:
+            print(f"Error ensuring mode synchronization: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def start_periodic_connectivity_checks(self):
         """Start periodic connectivity checks every 30 seconds"""
@@ -718,6 +985,22 @@ class MainScreen(Screen):
                         if firebase_connected != self.autonomous_data_exchange["firebase_connected"]:
                             self.autonomous_data_exchange["firebase_connected"] = firebase_connected
                             print(f"Firebase connectivity changed: {firebase_connected}")
+                    
+                    # Monitor Firebase mode changes
+                    if self.autonomous_data_exchange["firebase_connected"]:
+                        self.monitor_firebase_mode_changes()
+                        
+                        # Ensure mode synchronization every few cycles
+                        if hasattr(self, '_sync_counter'):
+                            self._sync_counter += 1
+                        else:
+                            self._sync_counter = 0
+                        
+                        # Check synchronization every 4 cycles (every 2 minutes)
+                        if self._sync_counter >= 4:
+                            self._sync_counter = 0
+                            print("Performing periodic mode synchronization check...")
+                            self.ensure_mode_synchronization()
                     
                     # Update data sync status
                     self.update_data_sync_status()
@@ -873,15 +1156,8 @@ class MainScreen(Screen):
                     print("Cannot switch to internet mode: no Firebase connection")
                     return
                 
-                # Switch to internet mode
-                self.control_mode = "internet"
-                self.control_mode_btn.text = "Internet"
-                self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
-                
-                if self.firebase_control:
-                    print("Synchronizing Firebase control mode to internet")
-                    self.firebase_control.set_control_mode("internet")
-                    print(f"Firebase control mode set to: {self.firebase_control.get_control_mode()}")
+                # Use the new implementation method
+                self.implement_internet_mode()
                 
                 # Update Stream control mode
                 if hasattr(streaming, 'set_control_mode'):
@@ -900,15 +1176,8 @@ class MainScreen(Screen):
                     print("Cannot switch to hardware mode: no hardware connectivity")
                     return
                 
-                # Switch to hardware mode
-                self.control_mode = "hardware"
-                self.control_mode_btn.text = "Hardware"
-                self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
-                
-                if self.firebase_control:
-                    print("Synchronizing Firebase control mode to hardware")
-                    self.firebase_control.set_control_mode("hardware")
-                    print(f"Firebase control mode set to: {self.firebase_control.get_control_mode()}")
+                # Use the new implementation method
+                self.implement_hardware_mode()
                 
                 # Update Stream control mode
                 if hasattr(streaming, 'set_control_mode'):
@@ -1190,7 +1459,7 @@ class MainScreen(Screen):
             traceback.print_exc()
 
     def on_firebase_system_update(self, system_data):
-        """Handle system status updates from Firebase"""
+        """Handle system status updates from Firebase with mode change detection"""
         try:
             print(f"Firebase system update: {system_data}")
             
@@ -1199,20 +1468,50 @@ class MainScreen(Screen):
                 system_data = system_data["status"]
             
             # Update system status display
-            control_mode = system_data.get("control_mode", "hardware")
+            firebase_control_mode = system_data.get("control_mode", "hardware")
             online = system_data.get("online", False)
             firebase_connected = system_data.get("firebase_connected", False)
             
+            # Check for mode change and implement it
+            if firebase_control_mode != self.control_mode:
+                print(f"=== FIREBASE SYSTEM UPDATE: MODE CHANGE DETECTED ===")
+                print(f"Firebase mode: {firebase_control_mode}, Current mode: {self.control_mode}")
+                
+                # Implement the mode change from Firebase
+                if firebase_control_mode == "internet":
+                    if self.autonomous_data_exchange["internet_connected"]:
+                        print("Implementing internet mode change from Firebase system update")
+                        self.implement_internet_mode()
+                    else:
+                        print("Firebase requests internet mode but no internet connection, staying in hardware mode")
+                elif firebase_control_mode == "hardware":
+                    print("Implementing hardware mode change from Firebase system update")
+                    self.implement_hardware_mode()
+                else:
+                    print(f"Unknown mode from Firebase system update: {firebase_control_mode}, ignoring change")
+            else:
+                print(f"Firebase system update: mode unchanged ({firebase_control_mode})")
+                
+                # Ensure Firebase control mode is synchronized
+                if self.firebase_control and self.firebase_control.get_control_mode() != firebase_control_mode:
+                    print("Synchronizing Firebase control mode from system update")
+                    self.firebase_control.set_control_mode(firebase_control_mode)
+            
             # Update UI to reflect system status
             if hasattr(self, 'control_mode_btn'):
-                if control_mode == "internet":
+                if self.control_mode == "internet":
                     self.control_mode_btn.text = "Internet"
-                    self.control_mode_btn.background_color = (0.8, 0.4, 0.2, 1)
+                    self.control_mode_btn.background_color = (0.2, 0.2, 0.8, 1)  # Blue for internet
                 else:
                     self.control_mode_btn.text = "Hardware"
-                    self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)
+                    self.control_mode_btn.background_color = (0.2, 0.6, 0.2, 1)  # Green for hardware
+                    
+            print(f"System update processed: control_mode={self.control_mode}, online={online}, firebase_connected={firebase_connected}")
+            
         except Exception as e:
             print(f"Error handling Firebase system update: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_firebase_mission_commands_update(self, mission_data):
         """Handle mission commands updates from Firebase"""
