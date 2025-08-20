@@ -2674,15 +2674,15 @@ class MainScreen(Screen):
                 self.start_autonomous_mission_sender()
                 
                     # Set optimal UI update rate for streaming (reduced to prevent UI blocking)
-        if hasattr(streaming, 'set_ui_update_rate'):
-            streaming.set_ui_update_rate(15)  # 15 FPS for better performance
-        
-        # Optimize UI performance
-        self.optimize_ui_performance()
-        
-        # Start background task manager for heavy operations
-        self.start_background_task_manager()
-                
+            if hasattr(streaming, 'set_ui_update_rate'):
+                streaming.set_ui_update_rate(15)  # 15 FPS for better performance
+            
+            # Optimize UI performance
+            self.optimize_ui_performance()
+            
+            # Start background task manager for heavy operations
+            self.start_background_task_manager()
+                    
         except Exception as e:
             print(f"Error in on_enter: {e}")
 
