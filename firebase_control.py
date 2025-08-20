@@ -6,7 +6,7 @@ from datetime import datetime
 from kivy.clock import Clock
 from kivy.properties import BooleanProperty, StringProperty
 from typing import Dict, Any, Optional, Callable, List, Tuple
-import signal
+import concurrent.futures
 
 # Import configuration
 try:
@@ -68,22 +68,17 @@ class FirebaseControl:
         self._initialize_firebase()
         
     def _firebase_operation_with_timeout(self, operation, timeout=5):
-        """Execute Firebase operation with timeout to prevent hanging"""
+        """Execute Firebase operation with timeout using threading (Windows compatible)"""
         try:
-            def timeout_handler(signum, frame):
-                raise TimeoutError(f"Firebase operation timed out after {timeout} seconds")
-            
-            # Set timeout
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(timeout)
-            
-            try:
-                result = operation()
-                return result
-            finally:
-                # Cancel the alarm
-                signal.alarm(0)
-                
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(operation)
+                try:
+                    result = future.result(timeout=timeout)
+                    return result
+                except concurrent.futures.TimeoutError:
+                    print(f"❌ Firebase operation timed out after {timeout} seconds")
+                    raise TimeoutError(f"Firebase operation timed out after {timeout} seconds")
+                    
         except TimeoutError as e:
             print(f"❌ Firebase operation timed out: {e}")
             raise e
@@ -525,9 +520,8 @@ class FirebaseControl:
         try:
             print("Starting Firebase listeners...")
             
-            # Test connection first
-            if not self.test_connection():
-                raise Exception("Firebase connection test failed")
+            # Don't test connection here to avoid circular dependency
+            # Connection will be tested separately when needed
             
             # Listen for joystick data
             joystick_path = FIREBASE_PATHS["joystick"].split("/")
