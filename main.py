@@ -182,23 +182,61 @@ import time
 from datetime import datetime
 
 def check_internet_connectivity():
-    """Check if internet connectivity is available"""
+    """Check if internet connectivity is available with improved timeout handling"""
     try:
-        # Try to connect to a reliable host with shorter timeout
-        socket.create_connection(("8.8.8.8", 53), timeout=1)
-        return True
-    except OSError:
+        # Try multiple reliable hosts with shorter timeouts
+        hosts = [
+            ("8.8.8.8", 53),      # Google DNS
+            ("1.1.1.1", 53),      # Cloudflare DNS
+            ("208.67.222.222", 53) # OpenDNS
+        ]
+        
+        for host, port in hosts:
+            try:
+                # Create socket with timeout
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)  # 2 second timeout
+                
+                # Try to connect
+                result = sock.connect_ex((host, port))
+                sock.close()
+                
+                if result == 0:
+                    print(f"✅ Internet connectivity confirmed via {host}:{port}")
+                    return True
+                    
+            except (socket.timeout, OSError) as e:
+                print(f"❌ Connection to {host}:{port} failed: {e}")
+                continue
+            except Exception as e:
+                print(f"❌ Unexpected error connecting to {host}:{port}: {e}")
+                continue
+        
+        print("❌ All internet connectivity checks failed")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Internet connectivity check error: {e}")
         return False
 
 def check_hardware_connectivity():
-    """Check if hardware (UDP) connectivity is available"""
+    """Check if hardware (UDP) connectivity is available with improved timeout handling"""
     try:
         test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        test_socket.settimeout(0.5)  # Reduced timeout to prevent UI blocking
+        test_socket.settimeout(1.0)  # 1 second timeout to prevent UI blocking
+        
+        # Try to send a test packet
         test_socket.sendto(b"ping", ('192.168.1.10', 5005))
         test_socket.close()
+        
+        print("✅ Hardware connectivity check completed")
         return True
-    except Exception:
+        
+    except socket.timeout:
+        print("❌ Hardware connectivity check timed out")
+        return False
+    except Exception as e:
+        print(f"❌ Hardware connectivity check failed: {e}")
         return False
 
 # Set environment variables (optional but helpful)
@@ -445,21 +483,8 @@ class MainScreen(Screen):
                 self.firebase_control.on_system_update = self.on_firebase_system_update  # type: ignore
                 print("Firebase control initialized successfully")
                 
-                # Test Firebase connection
-                if self.firebase_control.test_connection():
-                    print("Firebase connection test successful")
-                    self.autonomous_data_exchange["firebase_connected"] = True
-                    
-                    # Check Firebase mode at startup after successful connection
-                    print("Checking Firebase mode at startup...")
-                    self.check_firebase_mode_at_startup()
-                    
-                    # Start periodic mode synchronization
-                    print("Starting periodic mode synchronization...")
-                    self.start_periodic_mode_sync()
-                else:
-                    print("Firebase connection test failed")
-                    self.autonomous_data_exchange["firebase_connected"] = False
+                # Firebase connection test will be done in background during connectivity checks
+                self.autonomous_data_exchange["firebase_connected"] = False
                     
             except Exception as e:
                 print(f"Error initializing Firebase control: {e}")
@@ -694,11 +719,11 @@ class MainScreen(Screen):
         try:
             print("Initializing connectivity checks...")
             
-            # Check hardware connectivity
+            # Check hardware connectivity (non-blocking)
             self.autonomous_data_exchange["hardware_connected"] = check_hardware_connectivity()
             self.autonomous_data_exchange["last_hardware_check"] = datetime.now()
             
-            # Check internet connectivity
+            # Check internet connectivity (non-blocking)
             self.autonomous_data_exchange["internet_connected"] = check_internet_connectivity()
             self.autonomous_data_exchange["last_internet_check"] = datetime.now()
             
@@ -706,12 +731,32 @@ class MainScreen(Screen):
             print(f"Internet connected: {self.autonomous_data_exchange['internet_connected']}")
             print(f"Firebase connected: {self.autonomous_data_exchange['firebase_connected']}")
             
-            # Check Firebase mode at startup if available
-            if self.firebase_control and self.autonomous_data_exchange["firebase_connected"]:
-                self.check_firebase_mode_at_startup()
-            
-            # Start periodic connectivity checks
+            # Start periodic connectivity checks immediately
             self.start_periodic_connectivity_checks()
+            
+            # Check Firebase mode at startup in background if available
+            if self.firebase_control and self.autonomous_data_exchange["internet_connected"]:
+                # Run Firebase check in background to prevent UI blocking
+                def background_firebase_check():
+                    try:
+                        if self.firebase_control.test_connection():
+                            self.autonomous_data_exchange["firebase_connected"] = True
+                            print("Firebase connection test successful")
+                            # Check Firebase mode at startup after successful connection
+                            print("Checking Firebase mode at startup...")
+                            self.check_firebase_mode_at_startup()
+                            # Start periodic mode synchronization
+                            print("Starting periodic mode synchronization...")
+                            self.start_periodic_mode_sync()
+                        else:
+                            print("Firebase connection test failed")
+                            self.autonomous_data_exchange["firebase_connected"] = False
+                    except Exception as e:
+                        print(f"Error in background Firebase check: {e}")
+                        self.autonomous_data_exchange["firebase_connected"] = False
+                
+                # Run in background thread
+                threading.Thread(target=background_firebase_check, daemon=True).start()
             
         except Exception as e:
             print(f"Error initializing connectivity checks: {e}")

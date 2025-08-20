@@ -1,9 +1,12 @@
+import os
 import json
 import threading
 import time
 from datetime import datetime
 from kivy.clock import Clock
 from kivy.properties import BooleanProperty, StringProperty
+from typing import Dict, Any, Optional, Callable, List, Tuple
+import signal
 
 # Import configuration
 try:
@@ -48,20 +51,56 @@ except ImportError as e:
     initialize_app = None
 
 class FirebaseControl:
-    def __init__(self, config):
-        """
-        Initialize Firebase control with configuration
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize Firebase control with enhanced error handling and timeouts"""
+        self.config = config
+        self.is_connected = False
+        self.control_mode = "hardware"
+        self.last_mode_update = None
+        self.mode_update_interval = 5  # seconds
         
-        config: Firebase configuration dictionary
-        """
+        # Callbacks
+        self.on_joystick_update: Optional[Callable] = None
+        self.on_autonomous_update: Optional[Callable] = None
+        self.on_system_update: Optional[Callable] = None
+        
+        # Initialize Firebase
+        self._initialize_firebase()
+        
+    def _firebase_operation_with_timeout(self, operation, timeout=5):
+        """Execute Firebase operation with timeout to prevent hanging"""
+        try:
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Firebase operation timed out after {timeout} seconds")
+            
+            # Set timeout
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout)
+            
+            try:
+                result = operation()
+                return result
+            finally:
+                # Cancel the alarm
+                signal.alarm(0)
+                
+        except TimeoutError as e:
+            print(f"❌ Firebase operation timed out: {e}")
+            raise e
+        except Exception as e:
+            print(f"❌ Firebase operation failed: {e}")
+            raise e
+
+    def _initialize_firebase(self):
+        """Initialize Firebase app, database, and auth"""
         try:
             if initialize_app is None:
                 raise ImportError("Pyrebase not available - initialize_app is None")
             
-            print(f"Initializing Firebase with config: {config.get('projectId', 'unknown')}")
+            print(f"Initializing Firebase with config: {self.config.get('projectId', 'unknown')}")
             
             # Initialize Firebase app
-            self.firebase = initialize_app(config)
+            self.firebase = initialize_app(self.config)
             print("Firebase app initialized")
             
             # Initialize database and auth
@@ -155,24 +194,46 @@ class FirebaseControl:
             test_path = FIREBASE_PATHS["system_status"].split("/")
             
             print(f"Writing test data to path: {test_path}")
-            # Write test data
-            self.db.child(*test_path).set(test_data)
-            print("✅ Test data written successfully")
             
-            # Read test data back
-            print("Reading test data back...")
-            result = self.db.child(*test_path).get()
-            if result.val():
-                print("✅ Test data read successfully")
-                self.is_connected = True
-                print(f"✅ Firebase connection status: {self.is_connected}")
+            # Use timeout wrapper for Firebase operations
+            def write_operation():
+                self.db.child(*test_path).set(test_data)
                 return True
+                
+            def read_operation():
+                result = self.db.child(*test_path).get()
+                return result.val() is not None
+            
+            # Execute operations with timeout
+            write_success = self._firebase_operation_with_timeout(write_operation, timeout=5)
+            if write_success:
+                print("✅ Test data written successfully")
+                
+                # Read test data back
+                print("Reading test data back...")
+                read_success = self._firebase_operation_with_timeout(read_operation, timeout=5)
+                
+                if read_success:
+                    print("✅ Test data read successfully")
+                    self.is_connected = True
+                    print(f"✅ Firebase connection status: {self.is_connected}")
+                    return True
+                else:
+                    print("❌ Failed to read test data")
+                    self.is_connected = False
+                    print(f"❌ Firebase connection status: {self.is_connected}")
+                    return False
             else:
-                print("❌ Failed to read test data")
+                print("❌ Failed to write test data")
                 self.is_connected = False
                 print(f"❌ Firebase connection status: {self.is_connected}")
                 return False
                 
+        except TimeoutError as e:
+            print(f"❌ Firebase connection test timed out: {e}")
+            self.is_connected = False
+            print(f"❌ Firebase connection status: {self.is_connected}")
+            return False
         except Exception as e:
             print(f"❌ Firebase connection test failed: {e}")
             import traceback
@@ -835,21 +896,56 @@ class FirebaseControl:
         except Exception as e:
             print(f"Error updating system status: {e}")
     
-    def set_control_mode(self, mode):
-        """Set control mode (hardware/internet)"""
-        if mode in ["hardware", "internet"]:
-            print(f"Setting Firebase control mode from {self.control_mode} to {mode}")
-            self.control_mode = mode
-            self.update_system_status()
-            print(f"Control mode set to: {mode}")
-            return True
-        else:
-            print(f"Invalid control mode: {mode}")
+    def set_control_mode(self, mode: str):
+        """Set the control mode in Firebase with timeout"""
+        try:
+            if mode not in ["hardware", "internet"]:
+                print(f"Invalid control mode: {mode}")
+                return False
+            
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            # Use existing system_status or create new one
+            current_status = getattr(self, 'system_status', {}).copy()
+            current_status["control_mode"] = mode
+            current_status["timestamp"] = datetime.now().isoformat()
+            
+            def set_operation():
+                self.db.child(*system_path).set(current_status)
+                return True
+            
+            success = self._firebase_operation_with_timeout(set_operation, timeout=3)
+            if success:
+                self.control_mode = mode
+                self.last_mode_update = datetime.now()
+                # Update local system_status
+                if hasattr(self, 'system_status'):
+                    self.system_status.update(current_status)
+                print(f"✅ Control mode set to '{mode}' in Firebase")
+                return True
+            else:
+                print(f"❌ Failed to set control mode to '{mode}' in Firebase")
+                return False
+                
+        except Exception as e:
+            print(f"Error setting control mode: {e}")
             return False
     
     def get_control_mode(self):
-        """Get current control mode"""
-        return self.control_mode
+        """Get the current control mode from Firebase with timeout"""
+        try:
+            system_path = FIREBASE_PATHS["system_status"].split("/")
+            
+            def get_operation():
+                result = self.db.child(*system_path).get()
+                if result.val():
+                    return result.val().get("control_mode", "hardware")
+                return "hardware"
+            
+            return self._firebase_operation_with_timeout(get_operation, timeout=3)
+            
+        except Exception as e:
+            print(f"Error getting control mode: {e}")
+            return "hardware"
     
     def is_firebase_connected(self):
         """Check if Firebase is connected"""
