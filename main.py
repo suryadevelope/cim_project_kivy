@@ -723,8 +723,8 @@ class MainScreen(Screen):
             self.autonomous_data_exchange["hardware_connected"] = check_hardware_connectivity()
             self.autonomous_data_exchange["last_hardware_check"] = datetime.now()
             
-            # Check internet connectivity (non-blocking)
-            self.autonomous_data_exchange["internet_connected"] = check_internet_connectivity()
+            # Assume internet is always available - remove connectivity check
+            self.autonomous_data_exchange["internet_connected"] = True
             self.autonomous_data_exchange["last_internet_check"] = datetime.now()
             
             print(f"Hardware connected: {self.autonomous_data_exchange['hardware_connected']}")
@@ -735,7 +735,7 @@ class MainScreen(Screen):
             self.start_periodic_connectivity_checks()
             
             # Check Firebase mode at startup in background if available
-            if self.firebase_control and self.autonomous_data_exchange["internet_connected"]:
+            if self.firebase_control:
                 # Run Firebase check in background to prevent UI blocking
                 def background_firebase_check():
                     try:
@@ -799,11 +799,8 @@ class MainScreen(Screen):
                         
                         # Implement the mode from Firebase
                         if firebase_mode == "internet":
-                            if self.autonomous_data_exchange["internet_connected"]:
-                                print("Implementing internet mode from Firebase")
-                                self.implement_internet_mode()
-                            else:
-                                print("Firebase requests internet mode but no internet connection, staying in hardware mode")
+                            print("Implementing internet mode from Firebase")
+                            self.implement_internet_mode()
                         elif firebase_mode == "hardware":
                             print("Implementing hardware mode from Firebase")
                             self.implement_hardware_mode()
@@ -950,12 +947,8 @@ class MainScreen(Screen):
                     
                     # Implement the new mode
                     if firebase_mode == "internet":
-                        if self.autonomous_data_exchange["internet_connected"]:
-                            print("Implementing internet mode change from Firebase")
-                            self.implement_internet_mode()
-                        else:
-                            print("Firebase requests internet mode but no internet connection, staying in hardware mode")
-                            self.handle_mode_sync_error("internet", "no_internet_connection")
+                        print("Implementing internet mode change from Firebase")
+                        self.implement_internet_mode()
                     elif firebase_mode == "hardware":
                         print("Implementing hardware mode change from Firebase")
                         self.implement_hardware_mode()
@@ -1149,13 +1142,9 @@ class MainScreen(Screen):
                     
                     # Implement the Firebase mode
                     if firebase_mode == "internet":
-                        if self.autonomous_data_exchange["internet_connected"]:
-                            self.implement_internet_mode()
-                            print("Mode synchronized to internet")
-                            return True
-                        else:
-                            print("Cannot sync to internet mode: no internet connection")
-                            return False
+                        self.implement_internet_mode()
+                        print("Mode synchronized to internet")
+                        return True
                     elif firebase_mode == "hardware":
                         self.implement_hardware_mode()
                         print("Mode synchronized to hardware")
@@ -1188,12 +1177,8 @@ class MainScreen(Screen):
                         self.autonomous_data_exchange["last_hardware_check"] = datetime.now()
                         print(f"Hardware connectivity changed: {hardware_connected}")
                     
-                    # Check internet connectivity
-                    internet_connected = check_internet_connectivity()
-                    if internet_connected != self.autonomous_data_exchange["internet_connected"]:
-                        self.autonomous_data_exchange["internet_connected"] = internet_connected
-                        self.autonomous_data_exchange["last_internet_check"] = datetime.now()
-                        print(f"Internet connectivity changed: {internet_connected}")
+                    # Internet connectivity is assumed to be always available
+                    # No need to check - focus on Firebase connectivity
                     
                     # Check Firebase connectivity if available
                     if self.firebase_control:
@@ -1244,17 +1229,16 @@ class MainScreen(Screen):
             # Run connectivity checks in background thread to prevent UI blocking
             def run_checks():
                 try:
-                    # Check internet connectivity
-                    internet_ok = check_internet_connectivity()
-                    self.autonomous_data_exchange["internet_connected"] = internet_ok
+                    # Internet connectivity is assumed to be always available
+                    self.autonomous_data_exchange["internet_connected"] = True
                     
                     # Check hardware connectivity
                     hardware_ok = check_hardware_connectivity()
                     self.autonomous_data_exchange["hardware_connected"] = hardware_ok
                     
-                    # Check Firebase connectivity if internet is available
+                    # Check Firebase connectivity directly - no internet dependency
                     firebase_ok = False
-                    if internet_ok and hasattr(self, 'firebase_control') and self.firebase_control:
+                    if hasattr(self, 'firebase_control') and self.firebase_control:
                         firebase_ok = self.firebase_control.test_connection()
                     self.autonomous_data_exchange["firebase_connected"] = firebase_ok
                     
@@ -1412,9 +1396,10 @@ class MainScreen(Screen):
                 # Switching to internet mode
                 print("Checking internet connectivity for internet mode...")
                 
-                if not self.autonomous_data_exchange["internet_connected"]:
-                    toast("Internet connectivity required for internet mode")
-                    print("Cannot switch to internet mode: no internet connectivity")
+                # Internet is always assumed available - check Firebase connectivity
+                if not self.autonomous_data_exchange["firebase_connected"]:
+                    toast("Firebase connection required for internet mode")
+                    print("Cannot switch to internet mode: no Firebase connection")
                     return
                 
                 if not self.autonomous_data_exchange["firebase_connected"]:
@@ -1487,9 +1472,9 @@ class MainScreen(Screen):
                 print(f"Received Firebase joystick update but not in internet mode (current: {self.control_mode})")
                 return
             
-            # Check connectivity status
-            if not self.autonomous_data_exchange["internet_connected"]:
-                print("Internet connectivity lost, ignoring Firebase joystick update")
+            # Internet is always assumed available - check Firebase connectivity
+            if not self.autonomous_data_exchange["firebase_connected"]:
+                print("Firebase connectivity lost, ignoring Firebase joystick update")
                 return
             
             if not self.autonomous_data_exchange["firebase_connected"]:
@@ -1795,9 +1780,9 @@ class MainScreen(Screen):
                 print(f"Received Firebase mission commands update but not in internet mode (current: {self.control_mode})")
                 return
             
-            # Check connectivity status
-            if not self.autonomous_data_exchange["internet_connected"]:
-                print("Internet connectivity lost, ignoring Firebase mission commands update")
+            # Internet is always assumed available - check Firebase connectivity
+            if not self.autonomous_data_exchange["firebase_connected"]:
+                print("Firebase connectivity lost, ignoring Firebase mission commands update")
                 return
             
             if not self.autonomous_data_exchange["firebase_connected"]:
