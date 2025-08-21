@@ -1498,15 +1498,15 @@ class MainScreen(Screen):
                 print("Checking internet connectivity for internet mode...")
                 
                 # Internet is always assumed available - check Firebase connectivity
-                if not self.autonomous_data_exchange["firebase_connected"]:
-                    toast("Firebase connection required for internet mode")
-                    print("Cannot switch to internet mode: no Firebase connection")
-                    return
+                # if not self.autonomous_data_exchange["firebase_connected"]:
+                #     toast("Firebase connection required for internet mode")
+                #     print("Cannot switch to internet mode: no Firebase connection")
+                #     return
                 
-                if not self.autonomous_data_exchange["firebase_connected"]:
-                    toast("Firebase connection required for internet mode")
-                    print("Cannot switch to internet mode: no Firebase connection")
-                    return
+                # if not self.autonomous_data_exchange["firebase_connected"]:
+                #     toast("Firebase connection required for internet mode")
+                #     print("Cannot switch to internet mode: no Firebase connection")
+                #     return
                 
                 # Use the new implementation method
                 self.implement_internet_mode()
@@ -3826,7 +3826,7 @@ class MapPlotScreen(Screen):
                         print(f"Sending mission data: {mission_data_dict}")
                         
                                                  # No connection test needed - Firebase connection is never tested after initial setup
-                         success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
+                        success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
                         if success:
                             # Update Firebase system status to reflect internet mode
                             main_screen.update_firebase_system_status()
