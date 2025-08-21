@@ -219,24 +219,42 @@ def check_internet_connectivity():
         print(f"❌ Internet connectivity check error: {e}")
         return False
 
+# Global flag to track if initial hardware connectivity check has been completed
+_hardware_connectivity_checked = False
+_hardware_connectivity_result = False
+
 def check_hardware_connectivity():
     """Check if hardware (UDP) connectivity is available with improved timeout handling"""
+    global _hardware_connectivity_checked, _hardware_connectivity_result
+    
+    # Only check once at startup - after that, return the cached result
+    if _hardware_connectivity_checked:
+        print("⏭️ Hardware connectivity already checked - using cached result")
+        return _hardware_connectivity_result
+    
     try:
+        print("🔍 Performing initial hardware connectivity check...")
         test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         test_socket.settimeout(1.0)  # 1 second timeout to prevent UI blocking
         
         # Try to send a test packet
-        test_socket.sendto(b"ping", ('192.168.42.129', 5005))
+        test_socket.sendto(b"ping", ('192.168.144.16', 5005))
         test_socket.close()
         
-        print("✅ Hardware connectivity check completed")
+        _hardware_connectivity_result = True
+        _hardware_connectivity_checked = True
+        print("✅ Initial hardware connectivity check completed - SUCCESS")
         return True
         
     except socket.timeout:
-        print("❌ Hardware connectivity check timed out")
+        _hardware_connectivity_result = False
+        _hardware_connectivity_checked = True
+        print("❌ Initial hardware connectivity check timed out")
         return False
     except Exception as e:
-        print(f"❌ Hardware connectivity check failed: {e}")
+        _hardware_connectivity_result = False
+        _hardware_connectivity_checked = True
+        print(f"❌ Initial hardware connectivity check failed: {e}")
         return False
 
 # Set environment variables (optional but helpful)
@@ -453,6 +471,10 @@ class MainScreen(Screen):
         
         # Flag to track when processing mission commands to prevent connection tests
         self.processing_mission_commands = False
+        
+        # Flag to track if initial connectivity check has been completed
+        # After this, no more network/Firebase connection tests will be performed
+        self.initial_connectivity_check_completed = False
         
         with self.canvas.before:
             Color(0.95, 0.95, 0.97, 1)
@@ -729,13 +751,18 @@ class MainScreen(Screen):
         try:
             print("Initializing connectivity checks...")
             
-            # Check hardware connectivity (non-blocking)
+            # Check hardware connectivity (non-blocking) - only once at startup
             self.autonomous_data_exchange["hardware_connected"] = check_hardware_connectivity()
             self.autonomous_data_exchange["last_hardware_check"] = datetime.now()
             
             # Assume internet is always available - remove connectivity check
             self.autonomous_data_exchange["internet_connected"] = True
             self.autonomous_data_exchange["last_internet_check"] = datetime.now()
+            
+            # Mark initial connectivity check as completed for hardware
+            # This prevents unnecessary network connectivity tests after startup
+            self.initial_connectivity_check_completed = True
+            print("✅ Initial hardware connectivity check completed - no more network tests will be performed")
             
             print(f"Hardware connected: {self.autonomous_data_exchange['hardware_connected']}")
             print(f"Internet connected: {self.autonomous_data_exchange['internet_connected']}")
@@ -761,9 +788,17 @@ class MainScreen(Screen):
                         else:
                             print("Firebase connection test failed")
                             self.autonomous_data_exchange["firebase_connected"] = False
+                        
+                        # Mark initial connectivity check as completed - no more connection tests after this
+                        self.initial_connectivity_check_completed = True
+                        print("✅ Initial connectivity check completed - no more connection tests will be performed")
+                        
                     except Exception as e:
                         print(f"Error in background Firebase check: {e}")
                         self.autonomous_data_exchange["firebase_connected"] = False
+                        # Mark initial connectivity check as completed even on error
+                        self.initial_connectivity_check_completed = True
+                        print("✅ Initial connectivity check completed (with error) - no more connection tests will be performed")
                 
                 # Run in background thread
                 threading.Thread(target=background_firebase_check, daemon=True).start()
@@ -1281,15 +1316,32 @@ class MainScreen(Screen):
                     # Internet connectivity is assumed to be always available
                     self.autonomous_data_exchange["internet_connected"] = True
                     
-                    # Check hardware connectivity
-                    hardware_ok = check_hardware_connectivity()
-                    self.autonomous_data_exchange["hardware_connected"] = hardware_ok
+                    # Check hardware connectivity - but NEVER check after initial setup
+                    # This prevents unnecessary network connectivity tests and delays
+                    if self.initial_connectivity_check_completed:
+                        # After initial check, just use the last known status
+                        # Don't perform any network connectivity tests
+                        hardware_ok = self.autonomous_data_exchange["hardware_connected"]
+                        print("⏭️ Skipping hardware connectivity check - initial check already completed")
+                    else:
+                        # Only check during initial setup
+                        hardware_ok = check_hardware_connectivity()
+                        self.autonomous_data_exchange["hardware_connected"] = hardware_ok
                     
-                    # Check Firebase connectivity directly - no internet dependency
-                    firebase_ok = False
+                    # Check Firebase connectivity - but NEVER test connection after initial check
+                    # This prevents unnecessary Firebase connection tests and delays
                     if hasattr(self, 'firebase_control') and self.firebase_control:
-                        firebase_ok = self.firebase_control.test_connection()
-                    self.autonomous_data_exchange["firebase_connected"] = firebase_ok
+                        if self.initial_connectivity_check_completed:
+                            # After initial check, just use the last known status
+                            # Don't send any testing data to Firebase
+                            firebase_ok = self.autonomous_data_exchange["firebase_connected"]
+                            print("⏭️ Skipping Firebase connection test - initial check already completed")
+                        else:
+                            # Only test connection during initial setup
+                            firebase_ok = self.firebase_control.test_connection()
+                            self.autonomous_data_exchange["firebase_connected"] = firebase_ok
+                    else:
+                        firebase_ok = False
                     
                     # Update data sync status on main thread
                     from kivy.clock import Clock
@@ -2013,7 +2065,7 @@ class MainScreen(Screen):
                 print(f"Sending formatted UDP command string: {joystick_data}")
                 # Create UDP socket and send the command
                 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                udp_socket.sendto(joystick_data.encode(), ('192.168.42.129', 5005))
+                udp_socket.sendto(joystick_data.encode(), ('192.168.144.16', 5005))
                 udp_socket.close()
                 print(f"Sent UDP command string directly: {joystick_data}")
                 return
@@ -2085,7 +2137,7 @@ class MainScreen(Screen):
             
             # Send via UDP
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.sendto(data.encode(), ('192.168.42.129', 5005))
+            udp_socket.sendto(data.encode(), ('192.168.144.16', 5005))
             udp_socket.close()
             print(f"Sent converted joystick data via UDP: {data}")
             
@@ -3203,7 +3255,7 @@ class MainScreen(Screen):
             import socket
             from kivy.clock import Clock
             from kivymd.toast import toast
-            host = '192.168.42.129'
+            host = '192.168.144.16'
             port = 5005
             def send(data, host, port):
                 try:
@@ -3231,6 +3283,7 @@ class MainScreen(Screen):
                     self.firebase_control.set_control_mode("internet")
                 
                 mission_data = {"mission": mission_points, "status": status}
+                # No connection test needed - Firebase connection is never tested after initial setup
                 success = self.firebase_control.send_autonomous_mission(mission_data)
                 if success:
                     print(f"Successfully sent autonomous mission to Firebase: {len(mission_points)} waypoints")
@@ -3251,7 +3304,7 @@ class MainScreen(Screen):
         from kivymd.toast import toast
         # Send status in the same JSON format as mission: {"mission": [], "status": status}
         data = json.dumps({"mission": [], "status": status})
-        host = '192.168.42.129'
+        host = '192.168.144.16'
         port = 5005
         def send(data, host, port):
             try:
@@ -3290,17 +3343,22 @@ class MainScreen(Screen):
                 print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
                 print(f"Firebase connected: {self.firebase_control.is_firebase_connected()}")
                 
-                # Only test Firebase connection if not already connected to avoid unnecessary delays
-                if not self.autonomous_data_exchange['firebase_connected']:
-                    print("Testing Firebase connection...")
-                    if self.firebase_control.test_connection():
-                        print("✓ Firebase connection test: SUCCESS")
-                        self.autonomous_data_exchange['firebase_connected'] = True
-                    else:
-                        print("✗ Firebase connection test: FAILED")
-                        self.autonomous_data_exchange['firebase_connected'] = False
+                # NEVER test Firebase connection after initial check to avoid delays and unnecessary data
+                if self.initial_connectivity_check_completed:
+                    print("⏭️ Skipping Firebase connection test - initial check already completed")
+                    print(f"✓ Firebase status: {'CONNECTED' if self.autonomous_data_exchange['firebase_connected'] else 'DISCONNECTED'}")
                 else:
-                    print("✓ Firebase already connected - skipping connection test")
+                    # Only test connection during initial setup
+                    if not self.autonomous_data_exchange['firebase_connected']:
+                        print("Testing Firebase connection (initial setup only)...")
+                        if self.firebase_control.test_connection():
+                            print("✓ Firebase connection test: SUCCESS")
+                            self.autonomous_data_exchange['firebase_connected'] = True
+                        else:
+                            print("✗ Firebase connection test: FAILED")
+                            self.autonomous_data_exchange['firebase_connected'] = False
+                    else:
+                        print("✓ Firebase already connected - skipping connection test")
             else:
                 print("Firebase control not available")
             
@@ -3313,16 +3371,21 @@ class MainScreen(Screen):
             # Test current control mode
             print(f"MainScreen control mode: {self.control_mode}")
             
-            # Test UDP connectivity
-            try:
-                import socket
-                test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                test_socket.settimeout(1)
-                test_socket.sendto(b"test", ('192.168.42.129', 5005))
-                print("✓ UDP connectivity test: SUCCESS")
-                test_socket.close()
-            except Exception as e:
-                print(f"✗ UDP connectivity test: FAILED - {e}")
+            # Test UDP connectivity - but NEVER test after initial check to avoid delays
+            if self.initial_connectivity_check_completed:
+                print("⏭️ Skipping UDP connectivity test - initial check already completed")
+                print(f"✓ UDP status: {'CONNECTED' if self.autonomous_data_exchange['hardware_connected'] else 'DISCONNECTED'}")
+            else:
+                # Only test during initial setup
+                try:
+                    import socket
+                    test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    test_socket.settimeout(1)
+                    test_socket.sendto(b"test", ('192.168.144.16', 5005))
+                    print("✓ UDP connectivity test: SUCCESS")
+                    test_socket.close()
+                except Exception as e:
+                    print(f"✗ UDP connectivity test: FAILED - {e}")
             
             # Test autonomous data exchange status
             print(f"Autonomous mode: {self.autonomous_data_exchange.get('autonomous_mode', 'unknown')}")
@@ -3699,7 +3762,7 @@ class MapPlotScreen(Screen):
         mission_data = json.dumps({"mission": mission_points, "status": last_status})
         
         # Send mission_data to remote device based on control mode
-        def send_mission(data, host='192.168.42.129', port=5005):
+        def send_mission(data, host='192.168.144.16', port=5005):
             import socket
             from kivy.clock import Clock
             from kivymd.toast import toast
@@ -3762,9 +3825,8 @@ class MapPlotScreen(Screen):
                         mission_data_dict = {"mission": mission_points, "status": last_status}
                         print(f"Sending mission data: {mission_data_dict}")
                         
-                        # Skip connection test if returning from mission planning to avoid delays
-                        skip_test = getattr(main_screen, 'returning_from_mission_planning', False)
-                        success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict, skip_connection_test=skip_test)
+                                                 # No connection test needed - Firebase connection is never tested after initial setup
+                         success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
                         if success:
                             # Update Firebase system status to reflect internet mode
                             main_screen.update_firebase_system_status()

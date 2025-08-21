@@ -23,7 +23,7 @@ except ImportError:
     print("Firebase not available in stream.py")
 
 # Network Configuration
-Stream_2_IP = "192.168.42.129"
+Stream_2_IP = "192.168.144.16"
 Stream_2_PORT = 5005
 LISTEN_IP = "0.0.0.0"  # Listen on all interfaces
 LISTEN_PORT = 5006

@@ -777,9 +777,13 @@ class FirebaseControl:
             traceback.print_exc()
             return False
     
-    def ensure_connection(self, skip_test_if_recently_connected=False):
+    def ensure_connection(self, skip_test_if_recently_connected=False, never_test_connection=False):
         """Ensure Firebase connection is established"""
         try:
+            if never_test_connection:
+                print("⏭️ Connection test explicitly disabled - using current connection status")
+                return self.is_connected
+            
             if not self.is_connected:
                 print("Firebase not connected, attempting to establish connection...")
                 if self.test_connection():
@@ -810,8 +814,9 @@ class FirebaseControl:
             print(f"Firebase connected: {self.is_connected}")
             print(f"Skip connection test: {skip_connection_test}")
             
-            # Ensure connection is established, optionally skipping test if recently connected
-            if not self.ensure_connection(skip_test_if_recently_connected=skip_connection_test):
+            # Ensure connection is established, but NEVER test connection after initial setup
+            # This prevents unnecessary Firebase connection tests and delays
+            if not self.ensure_connection(never_test_connection=True):
                 print("❌ Cannot send mission: Firebase connection not available")
                 return False
             
