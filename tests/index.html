@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>RViz -> Web viewer (roslib + ros3d)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body { height:100%; margin:0; font-family:system-ui,Segoe UI,Roboto,Arial; }
+    .app { display:flex; height:100vh; }
+    .viewer { flex:1; position:relative; background:#111; }
+    #viewer { width:100%; height:100%; display:block; }
+    .sidebar {
+      width:360px;
+      background:#f7f7f8;
+      border-left:1px solid #ddd;
+      display:flex;
+      flex-direction:column;
+      padding:12px;
+      box-sizing:border-box;
+    }
+    .panel { margin-bottom:12px; }
+    .panel h3 { margin:6px 0; font-size:14px; color:#222; }
+    .controls input, .controls select { width:100%; padding:8px; margin-top:6px; box-sizing:border-box; }
+    .msgs { flex:1; overflow:auto; background:#fff; border:1px solid #ddd; padding:8px; font-family:monospace; font-size:12px;}
+    .status { font-size:12px; color:green; margin-top:6px;}
+    .btn { padding:8px; margin-top:8px; width:100%; border:none; background:#1976d2; color:white; cursor:pointer; border-radius:6px; }
+    .small { font-size:12px; color:#444; }
+  </style>
+
+  <!-- roslib and ros3d from CDNs (RobotWebTools / cdnjs) -->
+  <script src="https://cdn.jsdelivr.net/npm/eventemitter3@5.0/dist/eventemitter3.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ros3d@1/build/ros3d.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.89.0/build/three.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <div class="viewer">
+      <div id="viewer"></div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel">
+        <h3>ROS Connection</h3>
+        <div class="controls">
+          <label class="small">ROS websocket URL</label>
+          <input id="rosUrl" value="ws://localhost:9090" />
+          <button id="connBtn" class="btn">Connect</button>
+          <div id="connStatus" class="status">not connected</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Subscriptions</h3>
+        <div class="controls">
+          <label class="small">PointCloud2 topic</label>
+          <input id="pcTopic" value="/unilidar/cloud" />
+          <label class="small">LaserScan topic</label>
+          <input id="scanTopic" value="/scan" />
+          <label class="small">Map (OccupancyGrid)</label>
+          <input id="mapTopic" value="/map" />
+          <label class="small">TF fixed frame</label>
+          <input id="fixedFrame" value="map" />
+          <button id="startBtn" class="btn">Start visualization</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Raw messages</h3>
+        <div id="msgs" class="msgs"></div>
+      </div>
+
+      <div class="panel small">
+        Tip: run <code>roslaunch rosbridge_server rosbridge_websocket.launch</code> and make sure ports are reachable. See roslibjs tutorials. :contentReference[oaicite:2]{index=2}
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Globals
+  let ros = null;
+  let viewer, tfClient, gridClient, pcClient, urdfClient;
+  let pcTopicSub = null;
+  const msgsEl = document.getElementById('msgs');
+  const connStatus = document.getElementById('connStatus');
+
+  function logMsg(text) {
+    const t = document.createElement('div');
+    t.textContent = '[' + new Date().toLocaleTimeString() + '] ' + text;
+    msgsEl.prepend(t);
+  }
+
+  // create 3D viewer (ros3d)
+  function makeViewer(domId) {
+    // clear old viewer if exists
+    if (viewer && viewer.scene) {
+      try { viewer.destroy(); } catch(e) { /* ignore */ }
+    }
+
+    viewer = new ROS3D.Viewer({
+      divID : domId,
+      width  : document.querySelector('.viewer').clientWidth,
+      height : document.querySelector('.viewer').clientHeight,
+      antialias: true,
+      background: '#111',
+      cameraPose: {x: 3, y: 3, z: 3}
+    });
+
+    // Add a grid (like RViz)
+    const grid = new ROS3D.Grid({ size: 10, color: 0x444444 });
+    viewer.scene.add(grid);
+  }
+
+  // connect to rosbridge
+  function connect(url) {
+    if (ros) {
+      try { ros.close(); } catch(e) {}
+      ros = null;
+    }
+
+    ros = new ROSLIB.Ros({ url: url });
+
+    ros.on('connection', function() {
+      connStatus.textContent = 'connected';
+      connStatus.style.color = 'green';
+      logMsg('Connected to ' + url);
+    });
+
+    ros.on('error', function(err) {
+      connStatus.textContent = 'error';
+      connStatus.style.color = 'crimson';
+      logMsg('Connection error: ' + JSON.stringify(err));
+    });
+
+    ros.on('close', function() {
+      connStatus.textContent = 'closed';
+      connStatus.style.color = 'orange';
+      logMsg('Connection closed.');
+    });
+  }
+
+  // start visualization (instantiate TFClient, OccupancyGridClient, PointCloud2, etc.)
+  function startVisualization() {
+    if (!ros) { alert('Connect ROS first'); return; }
+
+    const fixedFrame = document.getElementById('fixedFrame').value || 'map';
+
+    // TF client keeps tree of frames to orient objects
+    tfClient = new ROSLIB.TFClient({
+      ros : ros,
+      angularThres : 0.01,
+      transThres : 0.01,
+      rate : 10.0,
+      fixedFrame : fixedFrame
+    });
+
+    // PointCloud2 visualization (ros3d PointCloud2)
+    const pcTopic = document.getElementById('pcTopic').value;
+    if (pcTopic && pcTopic.trim() !== '') {
+      const pointCloud = new ROS3D.PointCloud2({
+        ros: ros,
+        topic: pcTopic,
+        rootObject: viewer.scene
+      });
+      logMsg('PointCloud2 client created for: ' + pcTopic);
+    }
+
+    // OccupancyGrid (map)
+    const mapTopic = document.getElementById('mapTopic').value;
+    if (mapTopic && mapTopic.trim() !== '') {
+      const gridClient = new ROS3D.OccupancyGridClient({
+        ros: ros,
+        topic: mapTopic,
+        continuous: true,
+        rootObject: viewer.scene
+      });
+      logMsg('OccupancyGrid client created for: ' + mapTopic);
+    }
+
+    // URDF Client (loads robot urdf via TF)
+    urdfClient = new ROS3D.UrdfClient({
+      ros: ros,
+      tfClient: tfClient,
+      path: '/',
+      rootObject: viewer.scene,
+      // optional: param name where robot_description lives
+      // param: '/robot_description'
+    });
+    logMsg('URDF client instantiated (if robot_description present it will appear).');
+
+    // LaserScan as simple points (fallback rendering if ros3d doesn't have direct element)
+    const scanTopic = document.getElementById('scanTopic').value;
+    if (scanTopic && scanTopic.trim() !== '') {
+      // Subscribe with roslib for LaserScan and render as points on canvas in viewer
+      const scanSub = new ROSLIB.Topic({ ros: ros, name: scanTopic, messageType: 'sensor_msgs/LaserScan', throttle_rate: 50});
+      const scanGroup = new THREE.Group();
+      viewer.scene.add(scanGroup);
+
+      scanSub.subscribe(function(msg) {
+        // clear previous
+        while (scanGroup.children.length) scanGroup.remove(scanGroup.children[0]);
+
+        const angle_min = msg.angle_min;
+        const angle_inc = msg.angle_increment;
+        const ranges = msg.ranges;
+        const pts = new THREE.Geometry();
+
+        for (let i=0;i<ranges.length;i++) {
+          const r = ranges[i];
+          if (!isFinite(r) || r <= 0.01) continue;
+          const a = angle_min + i * angle_inc;
+          const x = r * Math.cos(a);
+          const y = r * Math.sin(a);
+          pts.vertices.push(new THREE.Vector3(x,y,0));
+        }
+        const material = new THREE.PointsMaterial({ size: 0.05 });
+        const cloud = new THREE.Points(pts, material);
+        scanGroup.add(cloud);
+      });
+
+      logMsg('Subscribed to LaserScan: ' + scanTopic);
+    }
+
+    // Show raw messages for other topics (subscribe once)
+    // Example: odom messages
+    const odom = new ROSLIB.Topic({ ros: ros, name: '/odom', messageType: 'nav_msgs/Odometry', throttle_rate: 200 });
+    odom.subscribe(function(msg) {
+      logMsg('odom: pos=(' + msg.pose.pose.position.x.toFixed(2) + ',' + msg.pose.pose.position.y.toFixed(2) + ')');
+    });
+
+    // optional: generic topic viewer. user can add more subscriptions below
+    logMsg('Visualization started. Fixed frame: ' + fixedFrame);
+  }
+
+  // UI wiring
+  document.getElementById('connBtn').addEventListener('click', function(){
+    const url = document.getElementById('rosUrl').value;
+    if (!url) return alert('Enter ws://host:9090 URL');
+    connect(url);
+    makeViewer('viewer');
+  });
+
+  document.getElementById('startBtn').addEventListener('click', function(){
+    startVisualization();
+  });
+
+  // Resize viewer on window resize
+  window.addEventListener('resize', function(){
+    if (viewer && viewer.scene && viewer.camera) {
+      viewer.resize(document.querySelector('.viewer').clientWidth, document.querySelector('.viewer').clientHeight);
+    }
+  });
+
+  // small helper: if rosbridge is remote, consider enabling CORS or using a reverse proxy
+</script>
+</body>
+</html>

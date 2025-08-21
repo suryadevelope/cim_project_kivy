@@ -226,7 +226,7 @@ def check_hardware_connectivity():
         test_socket.settimeout(1.0)  # 1 second timeout to prevent UI blocking
         
         # Try to send a test packet
-        test_socket.sendto(b"ping", ('192.168.1.10', 5005))
+        test_socket.sendto(b"ping", ('192.168.42.129', 5005))
         test_socket.close()
         
         print("✅ Hardware connectivity check completed")
@@ -454,6 +454,10 @@ class MainScreen(Screen):
         self.image_widgets = []
         self.autonomous_event = None
         self.joystick_control_enabled = False  # Initialize joystick control state
+        
+        # Flag to track if returning from mission planning
+        # This prevents unnecessary Firebase connection tests when returning to home screen
+        self.returning_from_mission_planning = False
         
         # Enhanced autonomous data exchange system
         self.autonomous_data_exchange = {
@@ -1226,6 +1230,14 @@ class MainScreen(Screen):
     def periodic_connectivity_check(self):
         """Non-blocking periodic connectivity check using Clock"""
         try:
+            # Skip connectivity checks if returning from mission planning to avoid delays
+            if self.returning_from_mission_planning:
+                print("⏭️ Skipping connectivity check - returning from mission planning")
+                # Schedule next check
+                from kivy.clock import Clock
+                Clock.schedule_once(lambda dt: self.periodic_connectivity_check(), 30)
+                return
+            
             # Run connectivity checks in background thread to prevent UI blocking
             def run_checks():
                 try:
@@ -1951,7 +1963,7 @@ class MainScreen(Screen):
                 print(f"Sending formatted UDP command string: {joystick_data}")
                 # Create UDP socket and send the command
                 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                udp_socket.sendto(joystick_data.encode(), ('192.168.1.10', 5005))
+                udp_socket.sendto(joystick_data.encode(), ('192.168.42.129', 5005))
                 udp_socket.close()
                 print(f"Sent UDP command string directly: {joystick_data}")
                 return
@@ -2023,7 +2035,7 @@ class MainScreen(Screen):
             
             # Send via UDP
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.sendto(data.encode(), ('192.168.1.10', 5005))
+            udp_socket.sendto(data.encode(), ('192.168.42.129', 5005))
             udp_socket.close()
             print(f"Sent converted joystick data via UDP: {data}")
             
@@ -2644,8 +2656,13 @@ class MainScreen(Screen):
     def on_enter(self):
         """Called when the screen is entered with optimized setup"""
         try:
-            # Test control functionality for debugging
-            self.test_control_functionality()
+            # Only test control functionality if NOT returning from mission planning
+            if not self.returning_from_mission_planning:
+                self.test_control_functionality()
+            else:
+                print("✅ Returning from mission planning - skipping control functionality test")
+                # Reset the flag
+                self.returning_from_mission_planning = False
             
             # Original functionality with optimized binding
             for image_widget in self.image_widgets:
@@ -3131,7 +3148,7 @@ class MainScreen(Screen):
             import socket
             from kivy.clock import Clock
             from kivymd.toast import toast
-            host = '192.168.1.10'
+            host = '192.168.42.129'
             port = 5005
             def send(data, host, port):
                 try:
@@ -3179,7 +3196,7 @@ class MainScreen(Screen):
         from kivymd.toast import toast
         # Send status in the same JSON format as mission: {"mission": [], "status": status}
         data = json.dumps({"mission": [], "status": status})
-        host = '192.168.1.10'
+        host = '192.168.42.129'
         port = 5005
         def send(data, host, port):
             try:
@@ -3208,11 +3225,17 @@ class MainScreen(Screen):
                 print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
                 print(f"Firebase connected: {self.firebase_control.is_firebase_connected()}")
                 
-                # Test Firebase connection
-                if self.firebase_control.test_connection():
-                    print("✓ Firebase connection test: SUCCESS")
+                # Only test Firebase connection if not already connected to avoid unnecessary delays
+                if not self.autonomous_data_exchange['firebase_connected']:
+                    print("Testing Firebase connection...")
+                    if self.firebase_control.test_connection():
+                        print("✓ Firebase connection test: SUCCESS")
+                        self.autonomous_data_exchange['firebase_connected'] = True
+                    else:
+                        print("✗ Firebase connection test: FAILED")
+                        self.autonomous_data_exchange['firebase_connected'] = False
                 else:
-                    print("✗ Firebase connection test: FAILED")
+                    print("✓ Firebase already connected - skipping connection test")
             else:
                 print("Firebase control not available")
             
@@ -3230,7 +3253,7 @@ class MainScreen(Screen):
                 import socket
                 test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 test_socket.settimeout(1)
-                test_socket.sendto(b"test", ('192.168.1.10', 5005))
+                test_socket.sendto(b"test", ('192.168.42.129', 5005))
                 print("✓ UDP connectivity test: SUCCESS")
                 test_socket.close()
             except Exception as e:
@@ -3317,6 +3340,10 @@ class MainScreen(Screen):
         """Called when returning from mission planning to ensure proper mode"""
         try:
             print("=== RETURNING FROM MISSION PLANNING ===")
+            
+            # Set flag to indicate we're returning from mission planning
+            self.returning_from_mission_planning = True
+            print("✅ Flag set: returning from mission planning")
             
             # Check if we should preserve internet mode
             if self.preserve_internet_mode_for_mission():
@@ -3599,7 +3626,7 @@ class MapPlotScreen(Screen):
         mission_data = json.dumps({"mission": mission_points, "status": last_status})
         
         # Send mission_data to remote device based on control mode
-        def send_mission(data, host='192.168.1.10', port=5005):
+        def send_mission(data, host='192.168.42.129', port=5005):
             import socket
             from kivy.clock import Clock
             from kivymd.toast import toast

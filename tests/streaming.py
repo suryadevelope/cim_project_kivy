@@ -1,22 +1,37 @@
-import cv2
+# import cv2
 
-# RTSP URLs (replace with server IP)
-urls = [
-    "rtsp://192.168.1.10:8554/cam0",
-    "rtsp://192.168.1.10:8554/cam1",
-    "rtsp://192.168.1.10:8554/cam2"
-]
+# # Replace with your RTSP URL
+# rtsp_url = "rtsp://192.168.42.81:8554/main.264"
 
-caps = [cv2.VideoCapture(url) for url in urls]
+# cap = cv2.VideoCapture(rtsp_url)
 
-while True:
-    for i, cap in enumerate(caps):
-        ret, frame = cap.read()
-        if ret:
-            cv2.imshow(f"Camera {i}", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+# if not cap.isOpened():
+#     print("Error: Cannot open RTSP stream")
+#     exit()
 
-for cap in caps:
-    cap.release()
-cv2.destroyAllWindows()
+# while True:
+#     ret, frame = cap.read()
+#     if not ret:
+#         print("Failed to grab frame")
+#         break
+
+#     cv2.imshow("RTSP Stream", frame)
+
+#     # Press 'q' to quit
+#     if cv2.waitKey(1) & 0xFF == ord('q'):
+#         break
+
+# cap.release()
+# cv2.destroyAllWindows()
+
+
+
+
+
+
+
+
+
+
+
+
