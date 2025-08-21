@@ -443,6 +443,17 @@ class MainScreen(Screen):
     gps_marker = None
     def __init__(self, **kwargs):
         super(MainScreen, self).__init__(**kwargs)
+        
+        # Initialize control mode
+        self.control_mode = "hardware"
+        
+        # Flag to track if returning from mission planning
+        # This prevents unnecessary Firebase connection tests when returning to home screen
+        self.returning_from_mission_planning = False
+        
+        # Flag to track when processing mission commands to prevent connection tests
+        self.processing_mission_commands = False
+        
         with self.canvas.before:
             Color(0.95, 0.95, 0.97, 1)
             self.rect = Rectangle(size=self.size, pos=self.pos)
@@ -454,10 +465,6 @@ class MainScreen(Screen):
         self.image_widgets = []
         self.autonomous_event = None
         self.joystick_control_enabled = False  # Initialize joystick control state
-        
-        # Flag to track if returning from mission planning
-        # This prevents unnecessary Firebase connection tests when returning to home screen
-        self.returning_from_mission_planning = False
         
         # Enhanced autonomous data exchange system
         self.autonomous_data_exchange = {
@@ -472,7 +479,6 @@ class MainScreen(Screen):
         
         # Firebase control initialization with enhanced error handling
         self.firebase_control = None
-        self.control_mode = "hardware"  # Default to hardware control
         
         # Initialize connectivity checks
         self.initialize_connectivity_checks()
@@ -1227,12 +1233,43 @@ class MainScreen(Screen):
         Clock.schedule_once(lambda dt: self.periodic_connectivity_check(), 30)
         print("Periodic connectivity checks started (non-blocking)")
 
+    def cancel_pending_connectivity_checks(self):
+        """Cancel any pending connectivity check schedules"""
+        try:
+            from kivy.clock import Clock
+            # Cancel any pending periodic connectivity checks
+            Clock.unschedule(self.periodic_connectivity_check)
+            print("✅ Cancelled pending connectivity check schedules")
+        except Exception as e:
+            print(f"Error cancelling connectivity checks: {e}")
+
+    def restart_connectivity_checks(self):
+        """Restart connectivity checks after returning from mission planning"""
+        try:
+            print("🔄 Restarting connectivity checks after mission planning return")
+            # Reset flags to allow normal operation
+            self.returning_from_mission_planning = False
+            self.processing_mission_commands = False
+            print("✅ Reset flags: allowing normal connectivity checks")
+            # Start the periodic connectivity check again
+            self.periodic_connectivity_check()
+        except Exception as e:
+            print(f"Error restarting connectivity checks: {e}")
+
     def periodic_connectivity_check(self):
         """Non-blocking periodic connectivity check using Clock"""
         try:
             # Skip connectivity checks if returning from mission planning to avoid delays
             if self.returning_from_mission_planning:
                 print("⏭️ Skipping connectivity check - returning from mission planning")
+                # Schedule next check
+                from kivy.clock import Clock
+                Clock.schedule_once(lambda dt: self.periodic_connectivity_check(), 30)
+                return
+            
+            # Skip connectivity checks if processing mission commands to avoid delays
+            if self.processing_mission_commands:
+                print("⏭️ Skipping connectivity check - processing mission commands")
                 # Schedule next check
                 from kivy.clock import Clock
                 Clock.schedule_once(lambda dt: self.periodic_connectivity_check(), 30)
@@ -1787,19 +1824,26 @@ class MainScreen(Screen):
         try:
             print(f"Firebase mission commands update received: {mission_data}")
             
+            # Set flag to indicate we're processing mission commands
+            self.processing_mission_commands = True
+            print("✅ Set flag: processing mission commands")
+            
             # Check if we're in internet mode
             if self.control_mode != "internet":
                 print(f"Received Firebase mission commands update but not in internet mode (current: {self.control_mode})")
+                self.processing_mission_commands = False
                 return
             
             # Internet is always assumed available - check Firebase connectivity
             if not self.autonomous_data_exchange["firebase_connected"]:
                 print("Firebase connectivity lost, ignoring Firebase mission commands update")
+                self.processing_mission_commands = False
                 return
             
-            if not self.autonomous_data_exchange["firebase_connected"]:
-                print("Firebase connectivity lost, ignoring Firebase mission commands update")
-                return
+            # Remove duplicate check
+            # if not self.autonomous_data_exchange["firebase_connected"]:
+            #     print("Firebase connectivity lost, ignoring Firebase mission commands update")
+            #     return
             
             # Handle mission data
             mission_points = mission_data.get("mission", [])
@@ -1882,12 +1926,18 @@ class MainScreen(Screen):
             if hasattr(self, 'waypoint_progress_label'):
                 self.waypoint_progress_label.text = f"WP: 0/{len(mission_points)}"
             
+            # Reset flag after processing mission commands
+            self.processing_mission_commands = False
+            print("✅ Reset flag: finished processing mission commands")
+            
             print(f"Successfully processed Firebase mission commands update: {mission_data}")
             
         except Exception as e:
             print(f"Error handling Firebase mission commands update: {e}")
             import traceback
             traceback.print_exc()
+            # Reset flag on error
+            self.processing_mission_commands = False
     
     def on_firebase_navigation_status_update(self, nav_data):
         """Handle navigation status updates from Firebase"""
@@ -2661,8 +2711,13 @@ class MainScreen(Screen):
                 self.test_control_functionality()
             else:
                 print("✅ Returning from mission planning - skipping control functionality test")
-                # Reset the flag
+                # Reset the flags
                 self.returning_from_mission_planning = False
+                self.processing_mission_commands = False
+                print("✅ Reset flags: returning from mission planning and processing mission commands")
+                # Restart connectivity checks after a delay to avoid immediate testing
+                from kivy.clock import Clock
+                Clock.schedule_once(lambda dt: self.restart_connectivity_checks(), 3)
             
             # Original functionality with optimized binding
             for image_widget in self.image_widgets:
@@ -3212,6 +3267,16 @@ class MainScreen(Screen):
     def test_control_functionality(self):
         """Test the control functionality to ensure everything is working"""
         try:
+            # Skip testing if returning from mission planning to avoid delays
+            if self.returning_from_mission_planning:
+                print("⏭️ Skipping control functionality test - returning from mission planning")
+                return
+            
+            # Skip testing if processing mission commands to avoid delays
+            if self.processing_mission_commands:
+                print("⏭️ Skipping control functionality test - processing mission commands")
+                return
+                
             print("=== Testing Control Functionality ===")
             
             # Test connectivity status
@@ -3344,6 +3409,14 @@ class MainScreen(Screen):
             # Set flag to indicate we're returning from mission planning
             self.returning_from_mission_planning = True
             print("✅ Flag set: returning from mission planning")
+            
+            # Set flag to indicate we're processing mission commands to prevent connection tests
+            self.processing_mission_commands = True
+            print("✅ Flag set: processing mission commands")
+            
+            # Cancel any pending connectivity checks to prevent delays
+            self.cancel_pending_connectivity_checks()
+            print("✅ Cancelled pending connectivity checks")
             
             # Check if we should preserve internet mode
             if self.preserve_internet_mode_for_mission():
@@ -3689,7 +3762,9 @@ class MapPlotScreen(Screen):
                         mission_data_dict = {"mission": mission_points, "status": last_status}
                         print(f"Sending mission data: {mission_data_dict}")
                         
-                        success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict)
+                        # Skip connection test if returning from mission planning to avoid delays
+                        skip_test = getattr(main_screen, 'returning_from_mission_planning', False)
+                        success = main_screen.firebase_control.send_autonomous_mission(mission_data_dict, skip_connection_test=skip_test)
                         if success:
                             # Update Firebase system status to reflect internet mode
                             main_screen.update_firebase_system_status()

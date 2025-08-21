@@ -777,7 +777,7 @@ class FirebaseControl:
             traceback.print_exc()
             return False
     
-    def ensure_connection(self):
+    def ensure_connection(self, skip_test_if_recently_connected=False):
         """Ensure Firebase connection is established"""
         try:
             if not self.is_connected:
@@ -789,22 +789,29 @@ class FirebaseControl:
                     print("❌ Failed to establish Firebase connection")
                     return False
             else:
-                print("✅ Firebase already connected")
-                return True
+                # If skip_test_if_recently_connected is True and we're already connected,
+                # skip the connection test to avoid delays
+                if skip_test_if_recently_connected:
+                    print("✅ Firebase already connected - skipping test to avoid delays")
+                    return True
+                else:
+                    print("✅ Firebase already connected")
+                    return True
         except Exception as e:
             print(f"❌ Error ensuring Firebase connection: {e}")
             return False
 
-    def send_autonomous_mission(self, mission_data):
+    def send_autonomous_mission(self, mission_data, skip_connection_test=False):
         """Send autonomous mission data to Firebase with enhanced validation"""
         try:
             print(f"=== FIREBASE SEND AUTONOMOUS MISSION DEBUG ===")
             print(f"send_autonomous_mission called with data: {mission_data}")
             print(f"Current control mode: {self.control_mode}")
             print(f"Firebase connected: {self.is_connected}")
+            print(f"Skip connection test: {skip_connection_test}")
             
-            # Ensure connection is established
-            if not self.ensure_connection():
+            # Ensure connection is established, optionally skipping test if recently connected
+            if not self.ensure_connection(skip_test_if_recently_connected=skip_connection_test):
                 print("❌ Cannot send mission: Firebase connection not available")
                 return False
             
