@@ -893,9 +893,12 @@ class MainScreen(Screen):
             traceback.print_exc()
 
     def implement_internet_mode(self):
-        """Implement internet mode from Firebase"""
+        """Implement internet mode from Firebase with strict mode separation"""
         try:
             print("=== IMPLEMENTING INTERNET MODE ===")
+            
+            # Enforce mode separation before switching
+            self.enforce_mode_separation("Switching to Internet Mode")
             
             # Set local control mode
             self.control_mode = "internet"
@@ -915,6 +918,7 @@ class MainScreen(Screen):
             self.update_control_mode_button()
             
             print("=== INTERNET MODE IMPLEMENTED SUCCESSFULLY ===")
+            print("🔒 MODE SEPARATION: Firebase operations now allowed, hardware socket operations blocked")
             
         except Exception as e:
             print(f"Error implementing internet mode: {e}")
@@ -922,9 +926,12 @@ class MainScreen(Screen):
             traceback.print_exc()
 
     def implement_hardware_mode(self):
-        """Implement hardware mode from Firebase"""
+        """Implement hardware mode from Firebase with strict mode separation"""
         try:
             print("=== IMPLEMENTING HARDWARE MODE ===")
+            
+            # Enforce mode separation before switching
+            self.enforce_mode_separation("Switching to Hardware Mode")
             
             # Set local control mode
             self.control_mode = "hardware"
@@ -944,6 +951,7 @@ class MainScreen(Screen):
             self.update_control_mode_button()
             
             print("=== HARDWARE MODE IMPLEMENTED SUCCESSFULLY ===")
+            print("🔒 MODE SEPARATION: Hardware socket operations now allowed, Firebase operations blocked")
             
         except Exception as e:
             print(f"Error implementing hardware mode: {e}")
@@ -3250,8 +3258,11 @@ class MainScreen(Screen):
             
         data = json.dumps({"mission": mission_points, "status": status})
         
-        # Send via UDP (hardware mode)
+        # STRICT MODE SEPARATION: Hardware mode operations
         if self.control_mode == "hardware":
+            print(f"🔒 HARDWARE MODE: Sending mission data via UDP socket only")
+            print(f"   Mission planning in hardware mode will NOT update Firebase")
+            
             import socket
             from kivy.clock import Clock
             from kivymd.toast import toast
@@ -3262,16 +3273,20 @@ class MainScreen(Screen):
                     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     udp_socket.sendto(data.encode('utf-8'), (host, port))
                     udp_socket.close()
+                    print(f"✅ Mission data sent via UDP socket (hardware mode): {len(mission_points)} waypoints")
                 except Exception as e:
-                    print(f"Autonomous mission send error: {e}")
+                    print(f"❌ Autonomous mission send error: {e}")
             threading.Thread(target=send, args=(data, host, port), daemon=True).start()
             # Update tracking variables for UDP send
             self._last_sent_status = status
             self._last_mission_hash = current_mission_hash
             self._last_send_time = current_time
         
-        # Send via Firebase (internet mode)
+        # STRICT MODE SEPARATION: Internet mode operations
         elif self.control_mode == "internet" and self.firebase_control:
+            print(f"🔒 INTERNET MODE: Sending mission data via Firebase only")
+            print(f"   Mission planning in internet mode will NOT use hardware sockets")
+            
             try:
                 print(f"Attempting to send autonomous mission to Firebase in internet mode")
                 print(f"Firebase control mode: {self.firebase_control.get_control_mode()}")
@@ -3286,19 +3301,32 @@ class MainScreen(Screen):
                 # No connection test needed - Firebase connection is never tested after initial setup
                 success = self.firebase_control.send_autonomous_mission(mission_data)
                 if success:
-                    print(f"Successfully sent autonomous mission to Firebase: {len(mission_points)} waypoints")
+                    print(f"✅ Successfully sent autonomous mission to Firebase: {len(mission_points)} waypoints")
                     # Update tracking variables only on successful send
                     self._last_sent_status = status
                     self._last_mission_hash = current_mission_hash
                     self._last_send_time = current_time
                 else:
-                    print("Failed to send autonomous mission to Firebase")
+                    print("❌ Failed to send autonomous mission to Firebase")
             except Exception as e:
-                print(f"Error sending autonomous mission to Firebase: {e}")
+                print(f"❌ Error sending autonomous mission to Firebase: {e}")
                 import traceback
                 traceback.print_exc()
+        else:
+            print(f"❌ Invalid mode configuration: {self.control_mode}")
+            print(f"   Cannot send mission data - mode not properly configured")
 
     def send_status_udp(self, status):
+        # STRICT MODE SEPARATION: Only allow UDP operations in hardware mode
+        if self.control_mode != "hardware":
+            print(f"🚫 STRICT MODE SEPARATION: Cannot send status via UDP in {self.control_mode} mode")
+            if self.control_mode == "internet":
+                print(f"   Use Firebase communication for status updates in internet mode")
+            return
+        
+        print(f"🔒 HARDWARE MODE: Sending status via UDP socket only")
+        print(f"   Status updates in hardware mode will NOT update Firebase")
+        
         import socket
         from kivy.clock import Clock
         from kivymd.toast import toast
@@ -3312,8 +3340,9 @@ class MainScreen(Screen):
                 udp_socket.sendto(data.encode('utf-8'), (host, port))
                 udp_socket.close()
                 Clock.schedule_once(lambda dt: toast(f"Sent status: {status}"))
+                print(f"✅ Status '{status}' sent via UDP socket (hardware mode)")
             except Exception as e:
-                print(f"Status send error: {e}")
+                print(f"❌ Status send error: {e}")
                 Clock.schedule_once(lambda dt: toast(f"Failed to send status: {status}"))
         threading.Thread(target=send, args=(data, host, port), daemon=True).start()
 
@@ -3489,6 +3518,80 @@ class MainScreen(Screen):
                 
         except Exception as e:
             print(f"Error handling return from mission planning: {e}")
+
+    def validate_mode_operation(self, operation_type, data_type=None):
+        """
+        Comprehensive validation for mode-specific operations to enforce strict separation
+        
+        Args:
+            operation_type (str): Type of operation ("firebase", "socket", "udp", "hardware", "internet")
+            data_type (str): Type of data being operated on
+            
+        Returns:
+            bool: True if operation is valid for current mode, False otherwise
+        """
+        try:
+            print(f"🔒 MODE VALIDATION: Checking {operation_type} operation in {self.control_mode} mode")
+            
+            if self.control_mode == "hardware":
+                # Hardware mode restrictions
+                if operation_type in ["firebase", "firebase_update", "firebase_send", "firebase_sync"]:
+                    print(f"🚫 STRICT MODE SEPARATION: {operation_type} operations not allowed in hardware mode")
+                    print(f"   Hardware mode must use socket/UDP communication only")
+                    if data_type:
+                        print(f"   Data type '{data_type}' cannot be processed via Firebase in hardware mode")
+                    return False
+                elif operation_type in ["socket", "udp", "hardware_control"]:
+                    print(f"✅ Hardware mode operation allowed: {operation_type}")
+                    return True
+                else:
+                    print(f"⚠️ Unknown operation type for hardware mode: {operation_type}")
+                    return False
+                    
+            elif self.control_mode == "internet":
+                # Internet mode restrictions
+                if operation_type in ["socket", "udp", "hardware_control", "local_socket"]:
+                    print(f"🚫 STRICT MODE SEPARATION: {operation_type} operations not allowed in internet mode")
+                    print(f"   Internet mode must use Firebase communication only")
+                    if data_type:
+                        print(f"   Data type '{data_type}' cannot be processed via hardware in internet mode")
+                    return False
+                elif operation_type in ["firebase", "firebase_update", "firebase_send", "firebase_sync"]:
+                    print(f"✅ Internet mode operation allowed: {operation_type}")
+                    return True
+                else:
+                    print(f"⚠️ Unknown operation type for internet mode: {operation_type}")
+                    return False
+            else:
+                print(f"❌ Unknown control mode: {self.control_mode}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error validating mode operation: {e}")
+            return False
+
+    def enforce_mode_separation(self, operation_description=""):
+        """
+        Log and enforce mode separation for debugging and monitoring
+        
+        Args:
+            operation_description (str): Description of the operation being performed
+        """
+        try:
+            print(f"🔒 MODE SEPARATION ENFORCED: {operation_description}")
+            print(f"   Current mode: {self.control_mode}")
+            print(f"   Hardware operations: {'ALLOWED' if self.control_mode == 'hardware' else 'BLOCKED'}")
+            print(f"   Firebase operations: {'ALLOWED' if self.control_mode == 'internet' else 'BLOCKED'}")
+            
+            if self.control_mode == "hardware":
+                print(f"   ✅ Hardware mode: Use socket/UDP communication only")
+                print(f"   🚫 Hardware mode: Firebase operations are blocked")
+            elif self.control_mode == "internet":
+                print(f"   ✅ Internet mode: Use Firebase communication only")
+                print(f"   🚫 Internet mode: Hardware socket operations are blocked")
+                
+        except Exception as e:
+            print(f"❌ Error enforcing mode separation: {e}")
 
 
 # --- Map Plotting Screen ---

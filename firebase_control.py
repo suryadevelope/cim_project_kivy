@@ -806,13 +806,18 @@ class FirebaseControl:
             return False
 
     def send_autonomous_mission(self, mission_data, skip_connection_test=False):
-        """Send autonomous mission data to Firebase with enhanced validation"""
+        """Send autonomous mission data to Firebase with enhanced validation and strict mode separation"""
         try:
             print(f"=== FIREBASE SEND AUTONOMOUS MISSION DEBUG ===")
             print(f"send_autonomous_mission called with data: {mission_data}")
             print(f"Current control mode: {self.control_mode}")
-            print(f"Firebase connected: {self.is_connected}")
-            print(f"Skip connection test: {skip_connection_test}")
+            
+            # STRICT MODE SEPARATION: Hardware mode cannot send to Firebase
+            if not self.validate_mode_operation("send", "autonomous"):
+                print(f"🚫 STRICT MODE SEPARATION: Cannot send autonomous mission to Firebase in {self.control_mode} mode")
+                if self.control_mode == "hardware":
+                    print(f"   Use socket communication for mission planning in hardware mode")
+                return False
             
             # Ensure connection is established, but NEVER test connection after initial setup
             # This prevents unnecessary Firebase connection tests and delays
@@ -821,7 +826,7 @@ class FirebaseControl:
                 return False
             
             # Check if data should be sent based on current mode
-            if not self.should_send_data("mission"):
+            if not self.should_send_data("autonomous"):
                 return False
             
             print("✅ Conditions met for Firebase upload - proceeding with validation")
@@ -865,20 +870,19 @@ class FirebaseControl:
                             self.db.child(*autonomous_path).set(validated_mission_data)
                             print(f"✅ Successfully sent autonomous mission to Firebase: {validated_mission_data}")
                             return True
-                        except Exception as firebase_error:
-                            print(f"❌ Firebase write error: {firebase_error}")
-                            import traceback
-                            traceback.print_exc()
+                        except Exception as e:
+                            print(f"❌ Firebase database error: {e}")
                             return False
                     else:
                         print("❌ No valid mission points found")
                         return False
                 else:
-                    print(f"❌ Invalid mission points format: {mission_points}")
+                    print("❌ Mission points is not a list")
                     return False
             else:
-                print(f"❌ Invalid mission data structure: {mission_data}")
+                print("❌ Invalid mission data structure")
                 return False
+                
         except Exception as e:
             print(f"❌ Error sending autonomous mission: {e}")
             import traceback
@@ -1034,14 +1038,81 @@ class FirebaseControl:
                 print(f"✅ Sending {data_type} data via Firebase (internet mode)")
                 return True
             elif self.control_mode == "hardware":
-                # In hardware mode, do NOT send to Firebase
-                print(f"❌ Cannot send {data_type} data: Currently in hardware mode, use socket communication")
+                # In hardware mode, do NOT send to Firebase - STRICT SEPARATION
+                print(f"🚫 STRICT MODE SEPARATION: Cannot send {data_type} data to Firebase while in hardware mode")
+                print(f"   Use socket communication for hardware mode operations")
                 return False
             else:
                 print(f"❌ Unknown control mode: {self.control_mode}")
                 return False
         except Exception as e:
             print(f"❌ Error checking if data should be sent: {e}")
+            return False
+
+    def enforce_mode_separation(self, operation_type="data_send"):
+        """
+        Enforce strict mode separation between hardware and internet modes
+        
+        Args:
+            operation_type (str): Type of operation being performed
+            
+        Returns:
+            bool: True if operation is allowed in current mode, False otherwise
+        """
+        try:
+            if self.control_mode == "hardware":
+                if operation_type in ["firebase_update", "firebase_send", "firebase_sync"]:
+                    print(f"🚫 STRICT MODE SEPARATION VIOLATION: {operation_type} not allowed in hardware mode")
+                    print(f"   Hardware mode must use socket communication only")
+                    return False
+                else:
+                    print(f"✅ Hardware mode operation allowed: {operation_type}")
+                    return True
+            elif self.control_mode == "internet":
+                if operation_type in ["socket_send", "hardware_control", "udp_operation"]:
+                    print(f"🚫 STRICT MODE SEPARATION VIOLATION: {operation_type} not allowed in internet mode")
+                    print(f"   Internet mode must use Firebase communication only")
+                    return False
+                else:
+                    print(f"✅ Internet mode operation allowed: {operation_type}")
+                    return True
+            else:
+                print(f"❌ Unknown control mode: {self.control_mode}")
+                return False
+        except Exception as e:
+            print(f"❌ Error enforcing mode separation: {e}")
+            return False
+
+    def validate_mode_operation(self, operation_type, data_type=None):
+        """
+        Comprehensive validation for mode-specific operations
+        
+        Args:
+            operation_type (str): Type of operation ("send", "receive", "update", "sync")
+            data_type (str): Type of data being operated on
+            
+        Returns:
+            bool: True if operation is valid for current mode, False otherwise
+        """
+        try:
+            # First check basic mode separation
+            if not self.enforce_mode_separation(f"firebase_{operation_type}" if operation_type in ["send", "update", "sync"] else operation_type):
+                return False
+            
+            # Additional validation for specific data types
+            if data_type:
+                if self.control_mode == "hardware" and data_type in ["autonomous", "mission", "joystick"]:
+                    print(f"🚫 Hardware mode cannot process {data_type} data via Firebase")
+                    print(f"   Use socket communication for {data_type} operations in hardware mode")
+                    return False
+                elif self.control_mode == "internet" and data_type in ["hardware_sensor", "local_control"]:
+                    print(f"🚫 Internet mode cannot process {data_type} data via hardware")
+                    print(f"   Use Firebase communication for {data_type} operations in internet mode")
+                    return False
+            
+            return True
+        except Exception as e:
+            print(f"❌ Error validating mode operation: {e}")
             return False
 
     def sync_mode_from_firebase(self):

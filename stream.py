@@ -177,7 +177,14 @@ class Stream(EventDispatcher):
             return self.control_mode
 
     def send_joystick_to_firebase(self, udp_command_string):
-        """Send joystick data to Firebase ONLY if in internet mode"""
+        """Send joystick data to Firebase ONLY if in internet mode - STRICT MODE SEPARATION"""
+        # STRICT MODE SEPARATION: Only allow Firebase operations in internet mode
+        if self.control_mode != "internet":
+            print(f"🚫 STRICT MODE SEPARATION: Cannot send joystick data to Firebase in {self.control_mode} mode")
+            if self.control_mode == "hardware":
+                print(f"   Use socket communication for joystick control in hardware mode")
+            return None
+        
         if self.firebase_control and self.control_mode == "internet":  # type: ignore
             try:
                 # Send the UDP command string directly to Firebase (same as socket)
@@ -196,7 +203,14 @@ class Stream(EventDispatcher):
                 print(f"ℹ️ Skipping Firebase send: Firebase control not available")
 
     def send_joystick_via_socket(self, udp_command_string):
-        """Send joystick data via socket ONLY if in hardware mode"""
+        """Send joystick data via socket ONLY if in hardware mode - STRICT MODE SEPARATION"""
+        # STRICT MODE SEPARATION: Only allow socket operations in hardware mode
+        if self.control_mode != "hardware":
+            print(f"🚫 STRICT MODE SEPARATION: Cannot send joystick data via socket in {self.control_mode} mode")
+            if self.control_mode == "internet":
+                print(f"   Use Firebase communication for joystick control in internet mode")
+            return False
+        
         if self.control_mode == "hardware":
             try:
                 # Send via UDP socket
@@ -212,7 +226,7 @@ class Stream(EventDispatcher):
 
     def send_joystick_data(self, udp_command_string):
         """
-        Send joystick data based on current control mode
+        Send joystick data based on current control mode with STRICT MODE SEPARATION
         
         Args:
             udp_command_string (str): UDP command string to send
@@ -221,11 +235,17 @@ class Stream(EventDispatcher):
             bool: True if data was sent successfully, False otherwise
         """
         try:
+            print(f"🔒 MODE SEPARATION: Processing joystick data in {self.control_mode} mode")
+            
             if self.control_mode == "hardware":
-                # Hardware mode: send via socket only
+                # Hardware mode: send via socket ONLY - NEVER touch Firebase
+                print(f"🔒 HARDWARE MODE: Sending joystick data via socket only")
+                print(f"   Joystick control in hardware mode will NOT update Firebase")
                 return self.send_joystick_via_socket(udp_command_string)
             elif self.control_mode == "internet":
-                # Internet mode: send via Firebase only
+                # Internet mode: send via Firebase ONLY - NEVER touch hardware sockets
+                print(f"🔒 INTERNET MODE: Sending joystick data via Firebase only")
+                print(f"   Joystick control in internet mode will NOT use hardware sockets")
                 return self.send_joystick_to_firebase(udp_command_string) is not None
             else:
                 print(f"❌ Unknown control mode: {self.control_mode}")
